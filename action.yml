@@ -1,0 +1,109 @@
+name: sieve
+description: Find the CVEs that matter on the runner and its running containers, using OSV.dev, CISA KEV and EPSS.
+author: casareanderson
+branding:
+  icon: shield
+  color: gray-dark
+
+inputs:
+  command:
+    description: What to scan, `host`, `containers` or `all`. `containers` and `all` run sieve with sudo.
+    required: false
+    default: host
+  args:
+    description: Extra command-line arguments for sieve, for example `--fixable-only --min-severity high`.
+    required: false
+    default: ""
+  fail-on-kev:
+    description: Fail the step when a known-exploited (CISA KEV) finding is reported.
+    required: false
+    default: "true"
+  python-version:
+    description: Python version to run sieve with.
+    required: false
+    default: "3.12"
+
+outputs:
+  findings:
+    description: Number of findings after filters.
+    value: ${{ steps.scan.outputs.findings }}
+  kev:
+    description: Number of known-exploited (CISA KEV) findings.
+    value: ${{ steps.scan.outputs.kev }}
+  fixable:
+    description: Number of findings with a fixed version available.
+    value: ${{ steps.scan.outputs.fixable }}
+  report:
+    description: Path to the full JSON report.
+    value: ${{ steps.scan.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install sieve
+      shell: bash
+      run: python -m pip install --disable-pip-version-check --quiet "$GITHUB_ACTION_PATH"
+
+    - name: Run sieve
+      id: scan
+      shell: bash
+      env:
+        SIEVE_COMMAND: ${{ inputs.command }}
+        SIEVE_ARGS: ${{ inputs.args }}
+        SIEVE_FAIL_ON_KEV: ${{ inputs.fail-on-kev }}
+      run: |
+        case "$SIEVE_COMMAND" in
+          host) run=() ;;
+          containers|all) run=() ; [ "$(id -u)" = 0 ] || run=(sudo -E) ;;
+          *) echo "::error::sieve: command must be host, containers or all, not '$SIEVE_COMMAND'"; exit 2 ;;
+        esac
+
+        report="$RUNNER_TEMP/sieve-report.json"
+        # sudo resets PATH, so call sieve by its full path. $SIEVE_ARGS is split into words on purpose.
+        set +e
+        "${run[@]}" "$(command -v sieve)" "$SIEVE_COMMAND" --json --cache "$RUNNER_TEMP/sieve/sieve.db" \
+          $SIEVE_ARGS > "$report"
+        rc=$?
+        set -e
+        if [ ! -s "$report" ]; then
+          echo "::error::sieve exited $rc without writing a report"
+          exit 2
+        fi
+
+        # One scan; the job summary table is rendered from the JSON report.
+        python - "$report" <<'PY'
+        import json, os, sys
+        from sieve import cli
+
+        d = json.load(open(sys.argv[1]))
+        s = d["summary"]
+        with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+            out.write(f"findings={s['findings']}\nkev={s['kev']}\nfixable={s['fixable']}\nreport={sys.argv[1]}\n")
+        lines = ["## sieve", ""]
+        lines += [f"- `{t['name']}`: {t['os']}, {t['packages']} packages"
+                  + ("" if t["status"] == "ok" else f" **[{t['status']}]**") for t in d["targets"]]
+        lines += ["", "```"]
+        rows = d["findings"]
+        lines += [cli.table(rows[:100], 0) if rows else "no findings"]
+        lines += [f"… {len(rows) - 100} more in the JSON report"] if len(rows) > 100 else []
+        lines += ["```", "", f"{s['findings']} findings, {s['kev']} actively exploited, {s['fixable']} fixable"]
+        lines += [f"- error: {e}" for e in d["errors"]]
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+            f.write("\n".join(lines) + "\n")
+        print("\n".join(lines[2:]))
+        PY
+
+        if [ "$rc" = 1 ]; then
+          if [ "$SIEVE_FAIL_ON_KEV" = true ]; then
+            echo "::error::sieve: known-exploited (CISA KEV) findings reported"
+            exit 1
+          fi
+          echo "::warning::sieve: known-exploited (CISA KEV) findings reported"
+        elif [ "$rc" != 0 ]; then
+          echo "::error::sieve: part of the scan failed (exit $rc), see the errors above"
+          exit "$rc"
+        fi
