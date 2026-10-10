@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: python -m pip install --disable-pip-version-check -e '.[test]'
+      - name: Byte-compile
+        run: python -m compileall -q sieve tests
+      - name: Tests (offline, OSV stubbed)
+        run: python -m pytest -q
+      - name: CLI smoke test
+        run: |
+          sieve --version
+          sieve host --help > /dev/null
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t sieve:ci .
+      - name: Run image
+        run: docker run --rm sieve:ci --version

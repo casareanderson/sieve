@@ -1,0 +1,93 @@
+# A real scan against OSV.dev, CISA KEV and EPSS. The unit tests stub all three, so this is what notices when an
+# upstream format or URL changes.
+name: Live scan
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install --disable-pip-version-check .
+      - name: sieve host --json
+        run: |
+          set +e
+          sieve host --json --cache "$RUNNER_TEMP/sieve/sieve.db" > report.json 2> stderr.txt
+          rc=$?
+          set -e
+          cat stderr.txt
+          echo "exit code $rc"
+          if [ "$rc" != 0 ] && [ "$rc" != 1 ]; then   # 1 = KEV finding on the runner, which is fine here
+            echo "::error::sieve exited $rc: part of the scan failed"
+            exit 1
+          fi
+      - name: Check the report
+        run: |
+          python - <<'PY'
+          import json, os, sys
+
+          d = json.load(open("report.json"))
+          cache = os.path.join(os.environ["RUNNER_TEMP"], "sieve")
+          t = d["targets"][0]
+          print(f"{t['os']}: {t['packages']} packages, {d['summary']['findings']} findings, "
+                f"{d['summary']['kev']} KEV, status {t['status']}")
+          problems = []
+          if t["packages"] == 0:
+              problems.append("zero packages scanned")
+          if t["status"] != "ok":
+              problems.append(f"target status {t['status']}: {t['notes']}")
+          if d["errors"]:
+              problems.append(f"errors: {d['errors']}")
+          if d["summary"]["findings"] == 0:
+              problems.append("zero findings on a stock Ubuntu runner: OSV matching is probably broken")
+          if not any(f["epss"] is not None for f in d["findings"]):
+              problems.append("no finding has an EPSS score")
+          for name in ("kev.json", "epss.csv.gz"):
+              if not os.path.exists(os.path.join(cache, name)):
+                  problems.append(f"{name} was not downloaded")
+          warnings = [l for l in open("stderr.txt") if l.startswith("sieve:")]
+          if warnings:
+              problems.append(f"warnings: {warnings}")
+          for p in problems:
+              print(f"::error::{p}")
+          sys.exit(1 if problems else 0)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-report
+          path: |
+            report.json
+            stderr.txt
+
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the action from this checkout
+        id: sieve
+        uses: ./
+        with:
+          command: host
+          args: --fixable-only
+          fail-on-kev: "false"
+      - name: Check the outputs
+        env:
+          FINDINGS: ${{ steps.sieve.outputs.findings }}
+          KEV: ${{ steps.sieve.outputs.kev }}
+          FIXABLE: ${{ steps.sieve.outputs.fixable }}
+          REPORT: ${{ steps.sieve.outputs.report }}
+        run: |
+          echo "findings=$FINDINGS kev=$KEV fixable=$FIXABLE report=$REPORT"
+          [ -n "$FINDINGS" ] && [ -n "$KEV" ] && [ -n "$FIXABLE" ] && [ -s "$REPORT" ]
