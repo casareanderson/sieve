@@ -3,6 +3,8 @@ import json
 import os
 import time
 
+import pytest
+
 from sieve import cli, intel, sources
 
 
@@ -96,3 +98,11 @@ def test_root_option_reaches_host_scan(monkeypatch, tmp_path):
     assert seen["root"] == str(tmp_path)
     assert cli.main(["host", "--cache", str(tmp_path / "c.db")]) == 0
     assert seen["root"] == "/"
+
+
+def test_version_matches_package(capsys):
+    from sieve import __version__
+    with pytest.raises(SystemExit) as e:
+        cli.main(["--version"])
+    assert e.value.code == 0
+    assert capsys.readouterr().out.strip() == f"sieve {__version__}" == "sieve 0.1.0"
