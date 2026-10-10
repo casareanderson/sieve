@@ -35,11 +35,15 @@ def parser():
     common.add_argument("--limit", type=int, default=50, metavar="N",
                         help="table rows to print (default 50, 0 = all); the summary always counts everything")
     sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,collector}")
-    sub.add_parser("host", parents=[common], help="scan this machine's OS and Python packages")
+    root = argparse.ArgumentParser(add_help=False)
+    root.add_argument("--root", default="/", metavar="PATH",
+                      help="read the host's packages from this directory instead of / (e.g. the host's / "
+                           "mounted at /host inside a container)")
+    sub.add_parser("host", parents=[common, root], help="scan this machine's OS and Python packages")
     c = sub.add_parser("containers", parents=[common], help="scan every running Docker container (needs root)")
     c.add_argument("--from-tar", metavar="FILE",
                    help="read a tar written by `sieve collector` on another machine ('-' = stdin) instead")
-    sub.add_parser("all", parents=[common], help="host + containers")
+    sub.add_parser("all", parents=[common, root], help="host + containers")
     sub.add_parser("collector", help="print the standalone collector script (pipe it to `python3 -` elsewhere)")
     return p
 
@@ -66,7 +70,7 @@ def scan(args, warn):
         targets.append(t)
 
     if args.cmd in ("host", "all"):
-        run(sources.host(kernel=args.kernel))
+        run(sources.host(root=args.root, kernel=args.kernel))
     if args.cmd in ("containers", "all"):
         proc = None
         try:
