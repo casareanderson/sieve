@@ -29,6 +29,25 @@ pipx install git+https://github.com/casareanderson/sieve
 
 Python 3.10 or newer. It also runs straight from a checkout: `python3 -m sieve host`.
 
+### Docker
+
+The image only needs to read the host's filesystem, so mount it read-only and point `--root` at it:
+
+```
+docker run --rm -v /:/host:ro ghcr.io/casareanderson/sieve host --root /host
+```
+
+Add `-v sieve-cache:/home/sieve/.cache` to keep the advisory cache between runs. The image runs as an
+unprivileged user; package databases are world-readable, so host scans don't need root.
+
+The image can't scan running containers itself: that needs the docker CLI and root on the Docker host. Run the
+collector there instead (it's standard-library Python) and pipe its output into the image:
+
+```
+docker run --rm ghcr.io/casareanderson/sieve collector | sudo python3 - \
+  | docker run --rm -i ghcr.io/casareanderson/sieve containers --from-tar -
+```
+
 ## Usage
 
 ```
@@ -48,6 +67,7 @@ Options (for `host`, `containers` and `all`):
 | `--cache PATH` | advisory cache, default `~/.cache/sieve/sieve.db`; the KEV and EPSS files are kept next to it |
 | `--no-epss` | don't download or use EPSS scores |
 | `--kernel` | also check kernel packages (skipped by default, see Limits) |
+| `--root PATH` | `host` and `all`: read the host's packages from this directory instead of `/` (for example the host's `/` mounted at `/host` in a container) |
 | `--limit N` | table rows to print, default 50, `0` for all; the summary line always counts everything |
 
 Exit codes: `1` if any known-exploited (KEV) finding is in the output, `2` if part of the scan failed, otherwise

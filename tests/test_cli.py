@@ -82,3 +82,17 @@ def test_kev_stale_cache_used_when_fetch_fails(tmp_path, capsys):
             raise requests.ConnectionError("offline")
     assert intel.kev_set(str(tmp_path), session=Down()) == {"CVE-2014-0160"}
     assert "KEV refresh failed" in capsys.readouterr().err
+
+
+def test_root_option_reaches_host_scan(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_host(root="/", kernel=False):
+        seen["root"] = root
+        return sources.Target("host", "host")
+    monkeypatch.setattr(sources, "host", fake_host)
+    monkeypatch.setattr(intel, "kev_set", lambda d: set())
+    assert cli.main(["host", "--root", str(tmp_path), "--cache", str(tmp_path / "c.db")]) == 0
+    assert seen["root"] == str(tmp_path)
+    assert cli.main(["host", "--cache", str(tmp_path / "c.db")]) == 0
+    assert seen["root"] == "/"
