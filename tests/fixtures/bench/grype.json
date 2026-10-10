@@ -1,0 +1,21 @@
+{
+  "matches": [
+    {"vulnerability": {"id": "CVE-2023-0286", "severity": "High", "namespace": "debian:distro:debian:10"},
+     "relatedVulnerabilities": [{"id": "CVE-2023-0286", "severity": "High", "namespace": "nvd:cpe"}],
+     "artifact": {"name": "libssl1.1", "version": "1.1.1n-0+deb10u3", "type": "deb",
+                  "upstreams": [{"name": "openssl"}]}},
+    {"vulnerability": {"id": "CVE-2021-3156", "severity": "High"},
+     "artifact": {"name": "sudo", "version": "1.8.27-1+deb10u2", "type": "deb"}},
+    {"vulnerability": {"id": "GHSA-r9hx-vwmv-q579", "severity": "Medium", "namespace": "github:language:python"},
+     "relatedVulnerabilities": [{"id": "CVE-2022-40897", "severity": "Medium"}],
+     "artifact": {"name": "setuptools", "version": "58.1.0", "type": "python"}},
+    {"vulnerability": {"id": "CVE-2023-44487", "severity": "Unknown"},
+     "relatedVulnerabilities": [{"id": "CVE-2023-44487", "severity": "Critical"}],
+     "artifact": {"name": "node", "version": "16.20.0", "type": "binary"}},
+    {"vulnerability": {"id": "CVE-2024-9999", "severity": "Critical"},
+     "artifact": {"name": "zlib1g", "version": "1:1.2.11.dfsg-1+deb10u2", "type": "deb",
+                  "upstreams": [{"name": "zlib", "version": "1:1.2.11.dfsg-1+deb10u2"}]}}
+  ],
+  "source": {"type": "image"},
+  "descriptor": {"name": "grype", "version": "0.119.0"}
+}

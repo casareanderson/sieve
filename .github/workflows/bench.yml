@@ -1,0 +1,107 @@
+name: bench
+
+# Weekly benchmark: sieve vs trivy, grype and osv-scanner on the deliberately old images in bench/images.txt.
+# Writes bench/RESULTS.md and bench/results.json and commits them back when they changed.
+
+on:
+  schedule:
+    - cron: "23 5 * * 1"          # Mondays 05:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write                 # to commit the results back
+
+concurrency:
+  group: bench
+  cancel-in-progress: false
+
+env:
+  # Scanner versions are pinned, and each download is checked against a SHA-256 written here (copied from the
+  # release's own checksums file when the pin was chosen), not against a checksums file fetched in the same run.
+  # Policy when bumping: the newest release that has been out for at least three weeks.
+  #
+  # trivy: v0.69.4, and the v0.69.5 and v0.69.6 images, were malicious (CVE-2026-33634, supply-chain compromise).
+  # Never pin anything in 0.69.4-0.69.6. 0.74.0 (2026-08-14) is outside that range and was the newest release
+  # older than three weeks on 2026-10-10.
+  TRIVY_VERSION: "0.74.0"
+  TRIVY_SHA256: "2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a"   # trivy_0.74.0_Linux-64bit.tar.gz
+  GRYPE_VERSION: "0.119.0"        # 2026-09-17
+  GRYPE_SHA256: "3fa2dc4b924621ab65404cf08d0b8438d896d80ab949c9d5a4ca283c36004c9b"   # grype_0.119.0_linux_amd64.tar.gz
+  OSV_SCANNER_VERSION: "2.6.0"    # 2026-09-14
+  OSV_SCANNER_SHA256: "ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108"   # osv-scanner_linux_amd64
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683   # v4.2.2
+
+      - name: Install sieve from this checkout
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --disable-pip-version-check -q .
+          "$RUNNER_TEMP/venv/bin/sieve" --version
+
+      - name: Install GNU time (peak memory)
+        run: command -v /usr/bin/time || (sudo apt-get update -q && sudo apt-get install -y -q time)
+
+      - name: Install trivy, grype and osv-scanner (pinned, checksum-verified)
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/bin"; dl="$RUNNER_TEMP/dl"
+          mkdir -p "$bin" "$dl"
+          fetch() {   # url file sha256
+            curl -fsSL --retry 3 -o "$dl/$2" "$1"
+            echo "$3  $dl/$2" | sha256sum -c -
+          }
+          fetch "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            trivy.tgz "$TRIVY_SHA256"
+          tar -xzf "$dl/trivy.tgz" -C "$dl" trivy
+          fetch "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
+            grype.tgz "$GRYPE_SHA256"
+          tar -xzf "$dl/grype.tgz" -C "$dl" grype
+          fetch "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" \
+            osv-scanner "$OSV_SCANNER_SHA256"
+          install -m 0755 "$dl/trivy" "$dl/grype" "$dl/osv-scanner" "$bin/"
+          echo "$bin" >> "$GITHUB_PATH"
+
+      - name: Tool versions and CLI help (for debugging flag changes)
+        run: |
+          trivy --version
+          grype version
+          osv-scanner --version
+          trivy image --help | grep -E -- '--(input|list-all-pkgs|skip-db-update|download-db-only|scanners)' || true
+          osv-scanner scan image --help || true
+
+      - name: Run the benchmark
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" bench/run.py \
+            --sieve "sudo $RUNNER_TEMP/venv/bin/sieve" \
+            --raw-dir "$RUNNER_TEMP/raw" \
+            --runner "GitHub Actions ($ImageOS, $(nproc) CPUs)"
+
+      - name: Upload raw tool outputs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        with:
+          name: bench-raw
+          path: |
+            ${{ runner.temp }}/raw/*.json
+            bench/RESULTS.md
+            bench/results.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Commit results if they changed
+        run: |
+          git add bench/RESULTS.md bench/results.json
+          if git diff --cached --quiet; then
+            echo "results unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q -m "bench: weekly results $(date -u +%Y-%m-%d)"
+          git pull -q --rebase origin "${GITHUB_REF_NAME}"
+          git push -q origin "HEAD:${GITHUB_REF_NAME}"

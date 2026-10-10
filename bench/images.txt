@@ -1,0 +1,11 @@
+# Deliberately old public images for bench/run.py, pinned by manifest-list digest (multi-arch index; the
+# runner pulls linux/amd64). Digests looked up anonymously with `skopeo inspect --raw` on 2026-10-10.
+# One image reference per line; the tag is kept for readability, the digest is what docker pulls.
+debian:10.13-slim@sha256:bb3dc79fddbca7e8903248ab916bb775c96ec61014b3d02b4f06043b604726dc
+debian:11.6-slim@sha256:9404b05bd09b57c76eccc0c5505b3c88b5feccac808d9b193a4fbac87bb44745
+debian:12.0-slim@sha256:9bd077d2f77c754f4f7f5ee9e6ded9ff1dff92c6dce877754da21b917c122c77
+ubuntu:focal-20220426@sha256:47f14534bda344d9fe6ffd6effb95eefe579f4be0d508b7445cf77f61a0e5724
+ubuntu:jammy-20220801@sha256:34fea4f31bf187bc915536831fd0afc9d214755bf700b5cdb1336c82516d154e
+alpine:3.18.0@sha256:02bb6f428431fbc2809c5d1b41eab5a68350194fb508869a33cb1af4444c9b11
+python:3.9.16-slim-buster@sha256:83c6f59ca894629d710ea03243819b8af63e1b074c5a1bdc96f2b8694163e65f
+node:16.20.0-alpine3.17@sha256:01b4c77bab0eec8c12c15ca96d1da583ee61d3bd710432d6fa5d0bf9132ae5e0

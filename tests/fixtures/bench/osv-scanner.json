@@ -1,0 +1,30 @@
+{
+  "results": [
+    {
+      "source": {"path": "/tmp/raw/debian-10.13-slim.tar:/var/lib/dpkg/status", "type": "lockfile"},
+      "packages": [
+        {"package": {"name": "openssl", "os_package_name": "libssl1.1", "version": "1.1.1n-0+deb10u3",
+                     "ecosystem": "Debian:10"},
+         "vulnerabilities": [
+           {"id": "DLA-3325-1", "aliases": [], "upstream": ["CVE-2022-4304", "CVE-2023-0286", "CVE-2023-0215"]}
+         ],
+         "groups": [{"ids": ["DLA-3325-1"], "aliases": ["DLA-3325-1"], "max_severity": "7.4"}]},
+        {"package": {"name": "sudo", "version": "1.8.27-1+deb10u2", "ecosystem": "Debian:10"},
+         "vulnerabilities": [{"id": "DLA-2534-1", "upstream": ["CVE-2021-3156"]}],
+         "groups": [{"ids": ["DLA-2534-1"], "max_severity": ""}]}
+      ]
+    },
+    {
+      "source": {"path": "/usr/local/lib/python3.9/site-packages", "type": "lockfile"},
+      "packages": [
+        {"package": {"name": "setuptools", "version": "58.1.0", "ecosystem": "PyPI"},
+         "vulnerabilities": [
+           {"id": "GHSA-r9hx-vwmv-q579", "aliases": ["CVE-2022-40897", "PYSEC-2022-43012"],
+            "database_specific": {"severity": "MODERATE"}},
+           {"id": "PYSEC-2022-43012", "aliases": ["CVE-2022-40897", "GHSA-r9hx-vwmv-q579"]}
+         ],
+         "groups": [{"ids": ["GHSA-r9hx-vwmv-q579", "PYSEC-2022-43012"], "max_severity": "5.9"}]}
+      ]
+    }
+  ]
+}
