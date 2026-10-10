@@ -1,0 +1,24 @@
+{
+ "sieve": "0.1.0",
+ "generated": "2026-10-10T12:00:00Z",
+ "targets": [
+  {"name": "sievebench/debian-10.13-slim:pinned", "kind": "container", "os": "debian 10", "packages": 92,
+   "status": "ok", "notes": []},
+  {"name": "some/unrelated:latest", "kind": "container", "os": "alpine 3.20.3", "packages": 15, "status": "ok",
+   "notes": []}
+ ],
+ "errors": [],
+ "summary": {"findings": 5, "kev": 1, "fixable": 3, "unfiltered": 5},
+ "findings": [
+  {"id": "CVE-2021-3156", "package": "sudo", "installed": "1.8.27-1+deb10u2", "fixed": "1.8.27-1+deb10u3",
+   "severity": "HIGH", "kev": true, "status": "fixed", "target": "sievebench/debian-10.13-slim:pinned"},
+  {"id": "CVE-2023-0286", "package": "libssl1.1", "installed": "1.1.1n-0+deb10u3", "fixed": "1.1.1n-0+deb10u4",
+   "severity": "HIGH", "kev": false, "status": "fixed", "target": "sievebench/debian-10.13-slim:pinned"},
+  {"id": "CVE-2022-40897", "package": "setuptools", "installed": "58.1.0", "fixed": "65.5.1",
+   "severity": "MEDIUM", "kev": false, "status": "fixed", "target": "sievebench/debian-10.13-slim:pinned"},
+  {"id": "CVE-2023-4911", "package": "libc6", "installed": "2.28-10+deb10u2", "fixed": "",
+   "severity": "HIGH", "kev": true, "status": "affected", "target": "sievebench/debian-10.13-slim:pinned"},
+  {"id": "CVE-2024-0001", "package": "busybox", "installed": "1.36.1-r5", "fixed": "",
+   "severity": "HIGH", "kev": false, "status": "affected", "target": "some/unrelated:latest"}
+ ]
+}

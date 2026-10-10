@@ -241,6 +241,14 @@ sieve is the scanner inside warden, on its own. warden adds the parts that need 
 over SSH, history, a console, alerts and patching. If you only want to know what to patch on one box, sieve is
 enough.
 
+## Benchmark
+
+A weekly job ([`bench.yml`](.github/workflows/bench.yml)) scans the same deliberately old public images, pinned
+by digest, with sieve, trivy, grype and osv-scanner, then compares the CVEs each one found, per image. It checks
+which tools caught the known-exploited (KEV) ones, and lists the KEV and critical CVEs sieve missed, with the
+reason where the data shows one. The results are in [`bench/RESULTS.md`](bench/RESULTS.md), and how they're made
+is in [`bench/run.py`](bench/run.py).
+
 ## Development
 
 ```

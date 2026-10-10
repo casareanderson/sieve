@@ -1,0 +1,47 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "/tmp/raw/debian-10.13-slim.tar",
+  "ArtifactType": "container_image",
+  "Metadata": {"OS": {"Family": "debian", "Name": "10.13", "EOSL": true}},
+  "Results": [
+    {
+      "Target": "/tmp/raw/debian-10.13-slim.tar (debian 10.13)",
+      "Class": "os-pkgs",
+      "Type": "debian",
+      "Packages": [
+        {"ID": "libssl1.1@1.1.1n-0+deb10u3", "Name": "libssl1.1", "Version": "1.1.1n", "Release": "0+deb10u3",
+         "SrcName": "openssl", "SrcVersion": "1.1.1n", "SrcRelease": "0+deb10u3"},
+        {"ID": "sudo@1.8.27-1+deb10u2", "Name": "sudo", "Version": "1.8.27", "Release": "1+deb10u2",
+         "SrcName": "sudo", "SrcVersion": "1.8.27", "SrcRelease": "1+deb10u2"},
+        {"ID": "linux-libc-dev@4.19.249-2", "Name": "linux-libc-dev", "Version": "4.19.249", "Release": "2",
+         "SrcName": "linux", "SrcVersion": "4.19.249", "SrcRelease": "2"},
+        {"ID": "libgcrypt20@1.8.4-5+deb10u1", "Name": "libgcrypt20", "Version": "1.8.4", "Release": "5+deb10u1",
+         "SrcName": "libgcrypt20", "SrcVersion": "1.8.4", "SrcRelease": "5+deb10u1", "SrcEpoch": 0}
+      ],
+      "Vulnerabilities": [
+        {"VulnerabilityID": "CVE-2023-0286", "VendorIDs": ["DLA-3325-1"], "PkgID": "libssl1.1@1.1.1n-0+deb10u3",
+         "PkgName": "libssl1.1", "InstalledVersion": "1.1.1n-0+deb10u3", "FixedVersion": "1.1.1n-0+deb10u4",
+         "Status": "fixed", "Severity": "HIGH"},
+        {"VulnerabilityID": "CVE-2021-3156", "PkgID": "sudo@1.8.27-1+deb10u2", "PkgName": "sudo",
+         "InstalledVersion": "1.8.27-1+deb10u2", "FixedVersion": "1.8.27-1+deb10u3", "Status": "fixed",
+         "Severity": "HIGH"},
+        {"VulnerabilityID": "CVE-2022-0847", "PkgID": "linux-libc-dev@4.19.249-2", "PkgName": "linux-libc-dev",
+         "InstalledVersion": "4.19.249-2", "Status": "fixed", "Severity": "HIGH"},
+        {"VulnerabilityID": "CVE-2019-12904", "PkgID": "libgcrypt20@1.8.4-5+deb10u1", "PkgName": "libgcrypt20",
+         "InstalledVersion": "1.8.4-5+deb10u1", "Status": "affected", "Severity": "CRITICAL"}
+      ]
+    },
+    {
+      "Target": "Python",
+      "Class": "lang-pkgs",
+      "Type": "python-pkg",
+      "Vulnerabilities": [
+        {"VulnerabilityID": "CVE-2022-40897", "PkgName": "setuptools", "InstalledVersion": "58.1.0",
+         "FixedVersion": "65.5.1", "Severity": "MEDIUM"},
+        {"VulnerabilityID": "GHSA-xxxx-only-trvy", "PkgName": "wheel", "InstalledVersion": "0.37.1",
+         "Severity": "LOW"}
+      ]
+    },
+    {"Target": "Node.js", "Class": "lang-pkgs", "Type": "node-pkg"}
+  ]
+}
