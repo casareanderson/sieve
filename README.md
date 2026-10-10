@@ -1,5 +1,9 @@
 # sieve
 
+[![CI](https://github.com/casareanderson/sieve/actions/workflows/ci.yml/badge.svg)](https://github.com/casareanderson/sieve/actions/workflows/ci.yml)
+[![Licence: AGPL-3.0](https://img.shields.io/github/license/casareanderson/sieve)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/casareanderson/sieve)](https://github.com/casareanderson/sieve/releases/latest)
+
 Find the CVEs that matter on a Linux box and its running containers.
 
 No scanner binary, no 1.4 GB database, no server: sieve reads the package lists already on the box, asks
