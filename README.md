@@ -7,7 +7,11 @@ No scanner binary, no 1.4 GB database, no server: sieve reads the package lists 
 [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) and [EPSS](https://www.first.org/epss/).
 Its only dependency is `requests`.
 
+![sieve ranking old container images: two actively exploited CVEs first](docs/sieve-run.png)
+
 ## Why
+
+![What sieve replaced: trivy's binary, database and server vs package lists and OSV.dev](docs/sieve-vs-trivy.png)
 
 sieve started as the scanner inside [warden](https://github.com/casareanderson/warden), where it replaced trivy on
 10 October 2026. Trivy's v0.69.4 release and its v0.69.5 and v0.69.6 images were malicious (CVE-2026-33634), and the
@@ -117,6 +121,8 @@ sieve containers --from-tar packages.tgz
 is no fix), `severity`, `kev`, `epss`, `epss_percentile`, `tier`, `status`, `target`, `summary`, `details` and `url`.
 
 ## How it works
+
+![How sieve works: package lists, OSV.dev, KEV and EPSS, ranked table](docs/sieve-how.png)
 
 **Package lists.** For the host: `/var/lib/dpkg/status` or `/lib/apk/db/installed`, `/etc/os-release`, and every
 `*.dist-info`/`*.egg-info` under the system Python site directories. Python packages that dpkg or apk installed
