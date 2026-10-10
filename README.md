@@ -134,6 +134,44 @@ sieve containers --from-tar packages.tgz
 
 `--from-tar -` reads the tar from stdin.
 
+### Use it in CI
+
+sieve is also a GitHub Action. It scans the runner, writes the ranked table to the job summary and fails the
+job when a known-exploited finding is reported:
+
+```yaml
+name: sieve
+on:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - id: sieve
+        uses: casareanderson/sieve@v1
+        with:
+          command: host              # host, containers or all
+          args: --fixable-only       # any other sieve options
+          fail-on-kev: "true"        # the default
+      - run: echo "${{ steps.sieve.outputs.kev }} KEV, ${{ steps.sieve.outputs.fixable }} fixable"
+```
+
+| input | default | |
+|---|---|---|
+| `command` | `host` | `host`, `containers` or `all`; `containers` and `all` run sieve with `sudo -E` when the runner isn't root |
+| `args` | `""` | extra sieve options |
+| `fail-on-kev` | `true` | fail the step on a known-exploited finding; `false` turns that into a warning |
+| `python-version` | `3.12` | Python to install sieve with |
+
+Outputs: `findings`, `kev`, `fixable` (the summary counts after filters) and `report` (path to the JSON report).
+A scan that partly failed (exit code 2) always fails the step. On GitHub-hosted runners this mostly tells you
+about the runner image; it's more useful on self-hosted runners and in jobs that start the containers you ship.
+
+`@v1` follows the latest 0.x release; pin a release tag such as `@v0.1.0` if you want it fixed.
+
 ### JSON
 
 `--json` prints `targets` (what was scanned, OS, package count, status, notes), `errors`, `summary` and
