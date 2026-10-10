@@ -1,0 +1,1424 @@
+{
+ "errors": [],
+ "generated": "2026-10-10 22:14 UTC",
+ "images": [
+  {
+   "comparison": {
+    "counts": {
+     "grype": 75,
+     "osv-scanner": 4,
+     "sieve": 4,
+     "trivy": 37
+    },
+    "kev": [],
+    "missed_by_sieve": 72,
+    "misses": [
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2019-8457",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libdb5.3"
+      ],
+      "reason": "OSV does not list this CVE for db5.3 5.3.28+dfsg1-0.5 in Debian:10 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     },
+     {
+      "found_by": [
+       "trivy"
+      ],
+      "id": "CVE-2023-45853",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "zlib1g"
+      ],
+      "reason": "OSV does not list this CVE for zlib 1:1.2.11.dfsg-1+deb10u2 in Debian:10 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     }
+    ],
+    "sieve_only_all": 0,
+    "vs_sieve": {
+     "grype": {
+      "overlap": 4,
+      "sieve_only": 0,
+      "tool_only": 71
+     },
+     "osv-scanner": {
+      "overlap": 4,
+      "sieve_only": 0,
+      "tool_only": 0
+     },
+     "trivy": {
+      "overlap": 4,
+      "sieve_only": 0,
+      "tool_only": 33
+     }
+    }
+   },
+   "ref": "debian:10.13-slim@sha256:bb3dc79fddbca7e8903248ab916bb775c96ec61014b3d02b4f06043b604726dc",
+   "runs": {
+    "grype": {
+     "peak_kb": 238168,
+     "rc": 0,
+     "seconds": 2.2187786500000186
+    },
+    "osv-scanner": {
+     "peak_kb": 70028,
+     "rc": 1,
+     "seconds": 0.971133736000013
+    },
+    "trivy": {
+     "peak_kb": 138136,
+     "rc": 0,
+     "seconds": 0.20925168600001598
+    }
+   },
+   "sieve_target": {
+    "kind": "container",
+    "name": "sievebench/debian-10.13-slim:pinned",
+    "notes": [],
+    "os": "debian 10",
+    "packages": 84,
+    "status": "ok"
+   },
+   "slug": "debian-10.13-slim",
+   "status": {
+    "grype": "ok",
+    "osv-scanner": "ok",
+    "sieve": "ok",
+    "trivy": "ok"
+   }
+  },
+  {
+   "comparison": {
+    "counts": {
+     "grype": 214,
+     "osv-scanner": 61,
+     "sieve": 57,
+     "trivy": 268
+    },
+    "kev": [
+     {
+      "caught_by": [
+       "sieve",
+       "trivy",
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2023-4911",
+      "packages": [
+       "libc-bin",
+       "libc6"
+      ]
+     }
+    ],
+    "missed_by_sieve": 211,
+    "misses": [
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2019-8457",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libdb5.3"
+      ],
+      "reason": "OSV does not list this CVE for db5.3 5.3.28+dfsg1-0.8 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     },
+     {
+      "found_by": [
+       "trivy"
+      ],
+      "id": "CVE-2023-45853",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "zlib1g"
+      ],
+      "reason": "OSV does not list this CVE for zlib 1:1.2.11.dfsg-2+deb11u2 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-12087",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "OSV does not list this CVE for perl 5.32.1-4+deb11u2 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-13221",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "OSV does not list this CVE for perl 5.32.1-4+deb11u2 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-33845",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "OSV does not list this CVE for gnutls28 3.7.1-5+deb11u3 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-42010",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "OSV does not list this CVE for gnutls28 3.7.1-5+deb11u3 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-42496",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "OSV does not list this CVE for perl 5.32.1-4+deb11u2 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-5450",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libc-bin",
+       "libc6"
+      ],
+      "reason": "OSV does not list this CVE for glibc 2.31-13+deb11u5 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-57433",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "OSV does not list this CVE for perl 5.32.1-4+deb11u2 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-75803",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libssl1.1"
+      ],
+      "reason": "OSV does not list this CVE for openssl 1.1.1n-0+deb11u4 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2026-8376",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "OSV does not list this CVE for perl 5.32.1-4+deb11u2 in Debian:11 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     }
+    ],
+    "sieve_only_all": 0,
+    "vs_sieve": {
+     "grype": {
+      "overlap": 57,
+      "sieve_only": 0,
+      "tool_only": 157
+     },
+     "osv-scanner": {
+      "overlap": 57,
+      "sieve_only": 0,
+      "tool_only": 4
+     },
+     "trivy": {
+      "overlap": 57,
+      "sieve_only": 0,
+      "tool_only": 211
+     }
+    }
+   },
+   "ref": "debian:11.6-slim@sha256:9404b05bd09b57c76eccc0c5505b3c88b5feccac808d9b193a4fbac87bb44745",
+   "runs": {
+    "grype": {
+     "peak_kb": 248808,
+     "rc": 0,
+     "seconds": 2.7720843470000034
+    },
+    "osv-scanner": {
+     "peak_kb": 71196,
+     "rc": 1,
+     "seconds": 1.0309622460000014
+    },
+    "trivy": {
+     "peak_kb": 158136,
+     "rc": 0,
+     "seconds": 0.23753920499999026
+    }
+   },
+   "sieve_target": {
+    "kind": "container",
+    "name": "sievebench/debian-11.6-slim:pinned",
+    "notes": [],
+    "os": "debian 11",
+    "packages": 96,
+    "status": "ok"
+   },
+   "slug": "debian-11.6-slim",
+   "status": {
+    "grype": "ok",
+    "osv-scanner": "ok",
+    "sieve": "ok",
+    "trivy": "ok"
+   }
+  },
+  {
+   "comparison": {
+    "counts": {
+     "grype": 188,
+     "osv-scanner": 190,
+     "sieve": 190,
+     "trivy": 196
+    },
+    "kev": [
+     {
+      "caught_by": [
+       "sieve",
+       "trivy",
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2023-4911",
+      "packages": [
+       "libc-bin",
+       "libc6"
+      ]
+     }
+    ],
+    "missed_by_sieve": 7,
+    "misses": [],
+    "sieve_only_all": 0,
+    "vs_sieve": {
+     "grype": {
+      "overlap": 188,
+      "sieve_only": 2,
+      "tool_only": 0
+     },
+     "osv-scanner": {
+      "overlap": 190,
+      "sieve_only": 0,
+      "tool_only": 0
+     },
+     "trivy": {
+      "overlap": 189,
+      "sieve_only": 1,
+      "tool_only": 7
+     }
+    }
+   },
+   "ref": "debian:12.0-slim@sha256:9bd077d2f77c754f4f7f5ee9e6ded9ff1dff92c6dce877754da21b917c122c77",
+   "runs": {
+    "grype": {
+     "peak_kb": 243188,
+     "rc": 0,
+     "seconds": 2.530756793999984
+    },
+    "osv-scanner": {
+     "peak_kb": 100920,
+     "rc": 1,
+     "seconds": 1.5298206330000141
+    },
+    "trivy": {
+     "peak_kb": 152200,
+     "rc": 0,
+     "seconds": 0.23010287899998616
+    }
+   },
+   "sieve_target": {
+    "kind": "container",
+    "name": "sievebench/debian-12.0-slim:pinned",
+    "notes": [],
+    "os": "debian 12",
+    "packages": 88,
+    "status": "ok"
+   },
+   "slug": "debian-12.0-slim",
+   "status": {
+    "grype": "ok",
+    "osv-scanner": "ok",
+    "sieve": "ok",
+    "trivy": "ok"
+   }
+  },
+  {
+   "comparison": {
+    "counts": {
+     "grype": 179,
+     "osv-scanner": 187,
+     "sieve": 75,
+     "trivy": 46
+    },
+    "kev": [],
+    "missed_by_sieve": 114,
+    "misses": [
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2011-10043",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2017-20230",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2019-1010022",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libc-bin",
+       "libc6"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2021-33574",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libc-bin",
+       "libc6"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2021-46848",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libtasn1-6"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2025-13151",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libtasn1-6"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2025-14831",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2025-69720",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libncurses6",
+       "libncursesw6",
+       "libtinfo6",
+       "ncurses-base",
+       "ncurses-bin"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2025-9820",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-12087",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-13221",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-33845",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-33846",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-3833",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-4176",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-42009",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-42010",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-42496",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-5260",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-5450",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libc-bin",
+       "libc6"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-57432",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-57433",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-8376",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "perl-base"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     }
+    ],
+    "sieve_only_all": 0,
+    "vs_sieve": {
+     "grype": {
+      "overlap": 69,
+      "sieve_only": 6,
+      "tool_only": 110
+     },
+     "osv-scanner": {
+      "overlap": 75,
+      "sieve_only": 0,
+      "tool_only": 112
+     },
+     "trivy": {
+      "overlap": 46,
+      "sieve_only": 29,
+      "tool_only": 0
+     }
+    }
+   },
+   "ref": "ubuntu:focal-20220426@sha256:47f14534bda344d9fe6ffd6effb95eefe579f4be0d508b7445cf77f61a0e5724",
+   "runs": {
+    "grype": {
+     "peak_kb": 231968,
+     "rc": 0,
+     "seconds": 2.281963363000017
+    },
+    "osv-scanner": {
+     "peak_kb": 301056,
+     "rc": 1,
+     "seconds": 2.6397122799999977
+    },
+    "trivy": {
+     "peak_kb": 138188,
+     "rc": 0,
+     "seconds": 0.18910993000000076
+    }
+   },
+   "sieve_target": {
+    "kind": "container",
+    "name": "sievebench/ubuntu-focal-20220426:pinned",
+    "notes": [],
+    "os": "ubuntu 20.04",
+    "packages": 92,
+    "status": "ok"
+   },
+   "slug": "ubuntu-focal-20220426",
+   "status": {
+    "grype": "ok",
+    "osv-scanner": "ok",
+    "sieve": "ok",
+    "trivy": "ok"
+   }
+  },
+  {
+   "comparison": {
+    "counts": {
+     "grype": 253,
+     "osv-scanner": 300,
+     "sieve": 283,
+     "trivy": 216
+    },
+    "kev": [
+     {
+      "caught_by": [
+       "sieve",
+       "trivy",
+       "grype",
+       "osv-scanner"
+      ],
+      "id": "CVE-2023-4911",
+      "packages": [
+       "libc-bin",
+       "libc6"
+      ]
+     }
+    ],
+    "missed_by_sieve": 17,
+    "misses": [
+     {
+      "found_by": [
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-2673",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libssl3"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-34181",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libssl3"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-34183",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libssl3"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-42764",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libssl3"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-42768",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libssl3"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-42769",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libssl3"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "osv-scanner"
+      ],
+      "id": "CVE-2026-5419",
+      "kev": false,
+      "osv_listed": true,
+      "packages": [
+       "libgnutls30"
+      ],
+      "reason": "unknown: OSV lists this CVE for the installed version, sieve did not report it",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     }
+    ],
+    "sieve_only_all": 0,
+    "vs_sieve": {
+     "grype": {
+      "overlap": 253,
+      "sieve_only": 30,
+      "tool_only": 0
+     },
+     "osv-scanner": {
+      "overlap": 283,
+      "sieve_only": 0,
+      "tool_only": 17
+     },
+     "trivy": {
+      "overlap": 216,
+      "sieve_only": 67,
+      "tool_only": 0
+     }
+    }
+   },
+   "ref": "ubuntu:jammy-20220801@sha256:34fea4f31bf187bc915536831fd0afc9d214755bf700b5cdb1336c82516d154e",
+   "runs": {
+    "grype": {
+     "peak_kb": 202420,
+     "rc": 0,
+     "seconds": 2.4786453399999857
+    },
+    "osv-scanner": {
+     "peak_kb": 461396,
+     "rc": 1,
+     "seconds": 3.3916078310000444
+    },
+    "trivy": {
+     "peak_kb": 160064,
+     "rc": 0,
+     "seconds": 0.2254888850000043
+    }
+   },
+   "sieve_target": {
+    "kind": "container",
+    "name": "sievebench/ubuntu-jammy-20220801:pinned",
+    "notes": [],
+    "os": "ubuntu 22.04",
+    "packages": 101,
+    "status": "ok"
+   },
+   "slug": "ubuntu-jammy-20220801",
+   "status": {
+    "grype": "ok",
+    "osv-scanner": "ok",
+    "sieve": "ok",
+    "trivy": "ok"
+   }
+  },
+  {
+   "comparison": {
+    "counts": {
+     "grype": 28,
+     "osv-scanner": 22,
+     "sieve": 22,
+     "trivy": 22
+    },
+    "kev": [],
+    "missed_by_sieve": 6,
+    "misses": [],
+    "sieve_only_all": 0,
+    "vs_sieve": {
+     "grype": {
+      "overlap": 22,
+      "sieve_only": 0,
+      "tool_only": 6
+     },
+     "osv-scanner": {
+      "overlap": 22,
+      "sieve_only": 0,
+      "tool_only": 0
+     },
+     "trivy": {
+      "overlap": 22,
+      "sieve_only": 0,
+      "tool_only": 0
+     }
+    }
+   },
+   "ref": "alpine:3.18.0@sha256:02bb6f428431fbc2809c5d1b41eab5a68350194fb508869a33cb1af4444c9b11",
+   "runs": {
+    "grype": {
+     "peak_kb": 217264,
+     "rc": 0,
+     "seconds": 2.3118918920000056
+    },
+    "osv-scanner": {
+     "peak_kb": 70088,
+     "rc": 1,
+     "seconds": 0.7932864979999863
+    },
+    "trivy": {
+     "peak_kb": 134876,
+     "rc": 0,
+     "seconds": 0.08700955099999419
+    }
+   },
+   "sieve_target": {
+    "kind": "container",
+    "name": "sievebench/alpine-3.18.0:pinned",
+    "notes": [],
+    "os": "alpine 3.18.0",
+    "packages": 15,
+    "status": "ok"
+   },
+   "slug": "alpine-3.18.0",
+   "status": {
+    "grype": "ok",
+    "osv-scanner": "ok",
+    "sieve": "ok",
+    "trivy": "ok"
+   }
+  },
+  {
+   "comparison": {
+    "counts": {
+     "grype": 195,
+     "osv-scanner": 36,
+     "sieve": 33,
+     "trivy": 78
+    },
+    "kev": [],
+    "missed_by_sieve": 166,
+    "misses": [
+     {
+      "found_by": [
+       "trivy",
+       "grype"
+      ],
+      "id": "CVE-2019-8457",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libdb5.3"
+      ],
+      "reason": "OSV does not list this CVE for db5.3 5.3.28+dfsg1-0.5 in Debian:10 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     },
+     {
+      "found_by": [
+       "trivy"
+      ],
+      "id": "CVE-2023-45853",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "zlib1g"
+      ],
+      "reason": "OSV does not list this CVE for zlib 1:1.2.11.dfsg-1+deb10u2 in Debian:10 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     },
+     {
+      "found_by": [
+       "grype"
+      ],
+      "id": "CVE-2025-4517",
+      "kev": false,
+      "osv_listed": null,
+      "packages": [
+       "python"
+      ],
+      "reason": "package type sieve does not read (binary)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     },
+     {
+      "found_by": [
+       "grype"
+      ],
+      "id": "CVE-2026-19445",
+      "kev": false,
+      "osv_listed": null,
+      "packages": [
+       "python"
+      ],
+      "reason": "package type sieve does not read (binary)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     }
+    ],
+    "sieve_only_all": 0,
+    "vs_sieve": {
+     "grype": {
+      "overlap": 33,
+      "sieve_only": 0,
+      "tool_only": 162
+     },
+     "osv-scanner": {
+      "overlap": 33,
+      "sieve_only": 0,
+      "tool_only": 3
+     },
+     "trivy": {
+      "overlap": 33,
+      "sieve_only": 0,
+      "tool_only": 45
+     }
+    }
+   },
+   "ref": "python:3.9.16-slim-buster@sha256:83c6f59ca894629d710ea03243819b8af63e1b074c5a1bdc96f2b8694163e65f",
+   "runs": {
+    "grype": {
+     "peak_kb": 291080,
+     "rc": 0,
+     "seconds": 2.6802998590000016
+    },
+    "osv-scanner": {
+     "peak_kb": 91436,
+     "rc": 1,
+     "seconds": 1.2689759120000303
+    },
+    "trivy": {
+     "peak_kb": 141384,
+     "rc": 0,
+     "seconds": 0.26347400300005575
+    }
+   },
+   "sieve_target": {
+    "kind": "container",
+    "name": "sievebench/python-3.9.16-slim-buster:pinned",
+    "notes": [],
+    "os": "debian 10",
+    "packages": 96,
+    "status": "ok"
+   },
+   "slug": "python-3.9.16-slim-buster",
+   "status": {
+    "grype": "ok",
+    "osv-scanner": "ok",
+    "sieve": "ok",
+    "trivy": "ok"
+   }
+  },
+  {
+   "comparison": {
+    "counts": {
+     "grype": 143,
+     "osv-scanner": 30,
+     "sieve": 62,
+     "trivy": 62
+    },
+    "kev": [
+     {
+      "caught_by": [
+       "grype"
+      ],
+      "id": "CVE-2023-44487",
+      "packages": [
+       "node"
+      ]
+     }
+    ],
+    "missed_by_sieve": 81,
+    "misses": [
+     {
+      "found_by": [
+       "grype"
+      ],
+      "id": "CVE-2022-48174",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "busybox",
+       "busybox-binsh",
+       "ssl_client"
+      ],
+      "reason": "OSV does not list this CVE for busybox 1.35.0-r29 in Alpine:v3.17 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype"
+      ],
+      "id": "CVE-2023-32002",
+      "kev": false,
+      "osv_listed": null,
+      "packages": [
+       "node"
+      ],
+      "reason": "package type sieve does not read (binary)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": false
+     },
+     {
+      "found_by": [
+       "grype"
+      ],
+      "id": "CVE-2023-44487",
+      "kev": true,
+      "osv_listed": null,
+      "packages": [
+       "node"
+      ],
+      "reason": "package type sieve does not read (binary)",
+      "severity": "HIGH",
+      "sieve_saw_package": false
+     },
+     {
+      "found_by": [
+       "grype"
+      ],
+      "id": "CVE-2026-31789",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libcrypto3",
+       "libssl3"
+      ],
+      "reason": "OSV does not list this CVE for openssl 3.0.9-r1 in Alpine:v3.17 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype"
+      ],
+      "id": "CVE-2026-34182",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libcrypto3",
+       "libssl3"
+      ],
+      "reason": "OSV does not list this CVE for openssl 3.0.9-r1 in Alpine:v3.17 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     },
+     {
+      "found_by": [
+       "grype"
+      ],
+      "id": "CVE-2026-75803",
+      "kev": false,
+      "osv_listed": false,
+      "packages": [
+       "libcrypto3",
+       "libssl3"
+      ],
+      "reason": "OSV does not list this CVE for openssl 3.0.9-r1 in Alpine:v3.17 (OSV coverage, import lag or distro triage)",
+      "severity": "CRITICAL",
+      "sieve_saw_package": true
+     }
+    ],
+    "sieve_only_all": 0,
+    "vs_sieve": {
+     "grype": {
+      "overlap": 62,
+      "sieve_only": 0,
+      "tool_only": 81
+     },
+     "osv-scanner": {
+      "overlap": 30,
+      "sieve_only": 32,
+      "tool_only": 0
+     },
+     "trivy": {
+      "overlap": 62,
+      "sieve_only": 0,
+      "tool_only": 0
+     }
+    }
+   },
+   "ref": "node:16.20.0-alpine3.17@sha256:01b4c77bab0eec8c12c15ca96d1da583ee61d3bd710432d6fa5d0bf9132ae5e0",
+   "runs": {
+    "grype": {
+     "peak_kb": 347616,
+     "rc": 0,
+     "seconds": 5.239581477999991
+    },
+    "osv-scanner": {
+     "peak_kb": 77580,
+     "rc": 1,
+     "seconds": 1.1857654350000075
+    },
+    "trivy": {
+     "peak_kb": 333656,
+     "rc": 0,
+     "seconds": 0.24586856000001944
+    }
+   },
+   "sieve_target": {
+    "kind": "container",
+    "name": "sievebench/node-16.20.0-alpine3.17:pinned",
+    "notes": [],
+    "os": "alpine 3.17.4",
+    "packages": 222,
+    "status": "ok"
+   },
+   "slug": "node-16.20.0-alpine3.17",
+   "status": {
+    "grype": "ok",
+    "osv-scanner": "ok",
+    "sieve": "ok",
+    "trivy": "ok"
+   }
+  }
+ ],
+ "kev_count": 1739,
+ "kev_version": "2026.10.08",
+ "runner": "GitHub Actions (ubuntu24, 4 CPUs)",
+ "tools": {
+  "grype": {
+   "command": "grype docker-archive:<image.tar> -o json",
+   "note": "DB update 77s",
+   "peak_kb": 347616,
+   "seconds": 22.514001723000007,
+   "version": "0.119.0"
+  },
+  "osv-scanner": {
+   "command": "osv-scanner scan image --archive <image.tar> --format json --all-vulns",
+   "note": "queries OSV.dev online, no local DB",
+   "peak_kb": 461396,
+   "seconds": 12.811264571000095,
+   "version": "2.6.0"
+  },
+  "sieve": {
+   "command": "sieve containers --json --limit 0",
+   "note": "queries OSV.dev online, cold cache; one run over all images",
+   "peak_kb": 109540,
+   "seconds": 14.309728718000002,
+   "version": "0.1.0"
+  },
+  "trivy": {
+   "command": "trivy image --input <image.tar> --format json --list-all-pkgs --scanners vuln --skip-db-update --quiet",
+   "note": "DB download 5.1s",
+   "peak_kb": 333656,
+   "seconds": 1.6878446990000668,
+   "version": "0.74.0"
+  }
+ },
+ "totals": {
+  "found": {
+   "grype": 1275,
+   "osv-scanner": 830,
+   "sieve": 726,
+   "trivy": 925
+  },
+  "images_ok": {
+   "grype": 8,
+   "osv-scanner": 8,
+   "sieve": 8,
+   "trivy": 8
+  },
+  "kev_any": 4,
+  "kev_caught": {
+   "grype": 4,
+   "osv-scanner": 3,
+   "sieve": 3,
+   "trivy": 3
+  },
+  "missed": 674,
+  "missed_critical": 52,
+  "missed_kev": 1,
+  "sieve_only": 0
+ }
+}
