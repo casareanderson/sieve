@@ -10,7 +10,7 @@
   sieve falls back to `rpm -qa` when the binary is there.
 - rpm version ordering (epoch, `~`, `^`, rpm's segment rules), checked against rpm's own test cases.
 - RHSA/ALSA/RLSA/SUSE-SU errata are expanded into their CVEs and keep the distro's Critical/Important/Moderate/Low
-  rating. AlmaLinux errata list their CVEs under `related`, which is now kept in the cache (cache schema 3).
+  rating. AlmaLinux errata list their CVEs under `related`, which is now kept in the cache.
 - rpm packages are queried under both their binary and source names, because Rocky indexes source packages while
   AlmaLinux and Red Hat index binaries.
 - Fedora, CentOS Stream, Oracle Linux and Amazon Linux are read and counted, with a note that OSV has no feed for
@@ -21,9 +21,23 @@
 - `kernel`, `kernel-core`, `kernel-modules` and friends are skipped like `linux-image-*` unless `--kernel`.
 - openSUSE "… on GA media" records whose title names a build at or below the installed one are ignored: one gave
   bash 5.3 on Tumbleweed a fixed version of 7.0 and flagged Shellshock.
+- `sieve path DIR ...`: scan project directories: `package-lock.json` (v1-3), `yarn.lock` (classic and berry),
+  `pnpm-lock.yaml` (v5, v6, v9, read without a YAML library), `node_modules` trees, `requirements*.txt` pins,
+  `poetry.lock`, `uv.lock` and virtualenv `site-packages`. Lockfiles it can't read are reported, never silently empty.
+- `sieve host` also reads global npm packages (`/usr/lib/node_modules`, `/usr/local/lib/node_modules`, an npmrc
+  `prefix=`), without needing node. npm packages that dpkg installed, and those under `/usr/lib/node_modules` on rpm
+  distributions (host and containers), are left to the distro's advisories.
+- Known-malicious packages (OpenSSF `MAL-` ids, or advisories filed as CWE-506, in any ecosystem) are a new top tier
+  above KEV: one finding per package with the duplicate records in `related`, no "fixed" version, never hidden by a
+  filter, and exit code 1 like KEV.
+- The advisory cache schema is now 4 (it keeps AlmaLinux `related` CVEs and the malicious flag), so the first scan
+  after upgrading refetches advisories once.
 
 ### Output
 
+- Known-malicious findings show as `☠ MALWARE`; the table's first column is now `ALERT`. In `--json` each finding
+  has `malicious` and the summary counts it; in `--sarif` they are `error` with a security-severity of 10.0 and a
+  `malicious` tag.
 - `--sarif`: SARIF 2.1.0 output for GitHub code scanning, validated against the OASIS schema; the Action's new
   `sarif` input writes it from the same scan and returns its path as the `sarif` output.
 

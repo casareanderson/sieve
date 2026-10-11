@@ -3,6 +3,8 @@
 Most of what a scanner reports is "affected, no fix released yet" (one box: 4,592 CVEs, 0 fixable). The order puts
 what you can and should act on first:
 
+  0. a known-malicious package is installed (OpenSSF MAL-*, or an advisory filed as embedded malicious code):
+     not a bug to patch but code someone planted; remove it and rotate any secrets the machine had
   1. known exploited (CISA KEV), fix or not
   2. EPSS >= 10% (a 1-in-10 chance of exploitation in the next 30 days) with a fix available
   3. CRITICAL with a fix available
@@ -17,6 +19,8 @@ EPSS_HOT = 0.1
 
 
 def tier(f):
+    if f.get("malicious"):
+        return 0
     if f["kev"]:
         return 1
     if f["fixed"] and (f.get("epss") or 0) >= EPSS_HOT:
@@ -37,6 +41,9 @@ def apply_filters(findings, min_severity=None, kev_only=False, fixable_only=Fals
     floor = SEV_RANK[min_severity.upper()] if min_severity else 0
     out = []
     for f in findings:
+        if f.get("malicious"):                       # never filtered away: malware has no fix and no "low" severity
+            out.append(f)
+            continue
         if kev_only and not f["kev"]:
             continue
         if fixable_only and not f["fixed"]:
@@ -50,6 +57,7 @@ def apply_filters(findings, min_severity=None, kev_only=False, fixable_only=Fals
 
 def summary(findings):
     return {"findings": len(findings),
+            "malicious": sum(1 for f in findings if f.get("malicious")),
             "kev": sum(1 for f in findings if f["kev"]),
             "fixable": sum(1 for f in findings if f["fixed"]),
             "epss_hot_fixable": sum(1 for f in findings if f["fixed"] and (f.get("epss") or 0) >= EPSS_HOT),
