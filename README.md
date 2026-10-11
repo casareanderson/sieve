@@ -327,7 +327,7 @@ Outputs: `findings`, `kev`, `fixable` (the summary counts after filters), `repor
 A scan that partly failed (exit code 2) always fails the step. On GitHub-hosted runners this mostly tells you
 about the runner image; it's more useful on self-hosted runners and in jobs that start the containers you ship.
 
-`@v1` follows the latest 0.x release; pin a release tag such as `@v0.2.0` if you want it fixed.
+`@v1` follows the latest 0.x release; pin a release tag such as `@v0.3.0` if you want it fixed.
 
 ### Code scanning
 
