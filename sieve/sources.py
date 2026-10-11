@@ -25,6 +25,7 @@ class Target:
         self.notes = []
         self.status = "ok"
         self.inuse = None               # collect.inuse_report() for this target, if it could be read
+        self.osinv = None               # (ecosystem, label, "deb"|"apk"|"rpm", entries), for --sbom
 
     def as_dict(self):
         d = {"name": self.name, "kind": self.kind, "os": self.os, "packages": self.packages,
@@ -45,6 +46,10 @@ def os_identity(files):
     else:
         entries = osv.parse_dpkg(files.get("var/lib/dpkg/status") or "")
     return eco, label, entries
+
+
+def _db(files):
+    return "apk" if files.get("lib/apk/db/installed") else "rpm" if files.get("rpm") else "deb"
 
 
 def split_kernel(entries, keep=False):
@@ -122,6 +127,7 @@ def host_target(name, files, py, owned, npm, npm_owned, kernel=False, rpm_err=No
         t.notes.append("no dpkg, apk or rpm package database found")
     pkgs = osv.os_packages(eco, entries) if eco else []
     rpm = files.get("rpm")
+    t.osinv = (eco, label, _db(files), entries) if entries else None
     py = [p for p in py if p[2] not in owned and not (rpm and rpm_owned(p[2]))]
     pkgs += [("PyPI", n, v, n, v) for n, v, _ in py]
     npm = [p for p in npm if p[2] not in npm_owned and not any(p[2].startswith(o + "/") for o in npm_owned)
@@ -161,6 +167,7 @@ def image_target(name, files, kernel=False):
     if entries and not eco:
         t.notes.append(f"{label}: OSV has no advisory feed for this OS; OS packages not checked")
     pkgs = osv.os_packages(eco, entries) if eco else []
+    t.osinv = (eco, label, _db(text), entries) if entries else None
     unread = 0
     for k, v in files.items():
         kind = k.split("/", 1)[0]

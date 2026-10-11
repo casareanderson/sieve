@@ -26,6 +26,10 @@ def parser():
     common.add_argument("--json", action="store_true", help="machine-readable output")
     common.add_argument("--sarif", action="store_true",
                         help="SARIF 2.1.0 output, for GitHub code scanning (upload with codeql-action/upload-sarif)")
+    common.add_argument("--sbom", choices=["cyclonedx", "spdx"], type=str.lower, metavar="{cyclonedx,spdx}",
+                        help="print an SBOM of what was read (CycloneDX 1.6 or SPDX 2.3 JSON); no OSV query")
+    common.add_argument("--with-vulns", action="store_true",
+                        help="with --sbom cyclonedx: scan as usual and add the findings as `vulnerabilities`")
     common.add_argument("--min-severity", choices=["low", "medium", "high", "critical"], type=str.lower,
                         help="hide findings below this severity (known-exploited findings are always shown)")
     common.add_argument("--kev-only", action="store_true", help="only known-exploited findings (CISA KEV)")
@@ -39,7 +43,7 @@ def parser():
                         help="also check kernel packages (linux-image, linux-libc-dev, ...); skipped by default")
     common.add_argument("--limit", type=int, default=50, metavar="N",
                         help="table rows to print (default 50, 0 = all); the summary always counts everything")
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,verify,remote,collector}")
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,sbom,verify,remote,collector}")
     root = argparse.ArgumentParser(add_help=False)
     root.add_argument("--root", default="/", metavar="PATH",
                       help="read the host's packages from this directory instead of / (e.g. the host's / "
@@ -53,6 +57,9 @@ def parser():
                         "node_modules, requirements*.txt, poetry.lock, uv.lock, virtualenvs")
     pa.add_argument("dirs", nargs="+", metavar="DIR")
     pa.add_argument("--depth", type=int, default=8, metavar="N", help="how deep to look under each DIR (default 8)")
+    sb = sub.add_parser("sbom", parents=[common], help="scan SBOMs made by other tools (CycloneDX or SPDX JSON: syft, "
+                        "trivy, cdxgen, GitHub's dependency graph)")
+    sb.add_argument("files", nargs="+", metavar="FILE")
     v = sub.add_parser("verify", parents=[root], help="has any installed file changed since its package manager put it "
                        "there? (dpkg, apk, rpm and pip checksums already on disk)")
     v.add_argument("--json", action="store_true", help="machine-readable output")
@@ -82,12 +89,20 @@ def parser():
 
 
 def scan(args, warn):
-    """→ (targets, findings, errors)."""
-    client = osv.OSV(args.cache)
+    """→ (targets, findings, errors). With --sbom (and no --with-vulns) targets keep their package lists and
+    nothing is asked of OSV, KEV or EPSS."""
+    export = args.sbom and not (args.with_vulns and args.sbom == "cyclonedx")
     targets, findings, errors = [], [], []
-    kev = intel.kev_set(os.path.dirname(os.path.abspath(args.cache)))
+    client = kev = None
 
     def run(t):
+        nonlocal client, kev
+        if export:
+            targets.append(t)
+            return
+        if client is None:
+            client = osv.OSV(args.cache)
+            kev = intel.kev_set(os.path.dirname(os.path.abspath(args.cache)))
         before, start = client.failed, len(findings)
         try:
             if t.pkgs:
@@ -103,11 +118,16 @@ def scan(args, warn):
         note = inuse.coverage_note(t.inuse)
         if note:
             t.notes.append(note)
-        t.pkgs = []                                     # free the list once matched
+        if not args.sbom:
+            t.pkgs, t.osinv = [], None                  # free the lists once matched
         targets.append(t)
 
     if args.cmd in ("host", "all"):
         run(sources.host(root=args.root, kernel=args.kernel))
+    if args.cmd == "sbom":
+        from . import sbom
+        for f in args.files:
+            run(sbom.read_file(f))
     if args.cmd == "path":
         for d in args.dirs:
             run(projects.scan_path(d, depth=args.depth))
@@ -235,7 +255,14 @@ def main(argv=None):
     findings = rank.rank(rank.apply_filters(findings, args.min_severity, args.kev_only, args.fixable_only,
                                             args.in_use_only))
     s = rank.summary(findings)
-    if args.sarif:
+    if args.sbom:
+        from . import sbom
+        if args.with_vulns and args.sbom == "spdx":
+            warn("--with-vulns needs --sbom cyclonedx (SPDX 2.3 has no place for vulnerabilities); not added")
+        vulns = findings if args.with_vulns and args.sbom == "cyclonedx" else None
+        json.dump(sbom.build(args.sbom, targets, vulns), sys.stdout, indent=1)
+        sys.stdout.write("\n")
+    elif args.sarif:
         from . import sarif
         json.dump(sarif.build([t.as_dict() for t in targets], findings, errors), sys.stdout, indent=1)
         sys.stdout.write("\n")
