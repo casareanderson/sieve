@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -38,7 +39,7 @@ def parser():
                         help="also check kernel packages (linux-image, linux-libc-dev, ...); skipped by default")
     common.add_argument("--limit", type=int, default=50, metavar="N",
                         help="table rows to print (default 50, 0 = all); the summary always counts everything")
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,verify,collector}")
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,verify,remote,collector}")
     root = argparse.ArgumentParser(add_help=False)
     root.add_argument("--root", default="/", metavar="PATH",
                       help="read the host's packages from this directory instead of / (e.g. the host's / "
@@ -65,6 +66,17 @@ def parser():
     v.add_argument("--all-missing", action="store_true",
                    help="also list missing docs, man pages and translations (images trim these; counted otherwise)")
     v.add_argument("--limit", type=int, default=50, metavar="N", help="table rows to print (default 50, 0 = all)")
+    r = sub.add_parser("remote", parents=[common],
+                       help="scan another machine over ssh (host + its containers); it needs only python3")
+    r.add_argument("dest", metavar="user@host", help="ssh destination (key auth: sieve runs ssh in BatchMode)")
+    r.add_argument("--port", type=int, help="ssh port")
+    r.add_argument("-i", "--identity", metavar="FILE", help="ssh private key")
+    r.add_argument("--ssh-opt", action="append", default=[], metavar="OPTION",
+                   help="extra ssh -o option, e.g. --ssh-opt ProxyJump=bastion (repeatable)")
+    r.add_argument("--sudo", action="store_true",
+                   help="run the collector with `sudo -n` (passwordless sudo): containers need root, and so does a "
+                        "full in-use picture; package lists alone don't")
+    r.add_argument("--no-containers", action="store_true", help="host packages only")
     sub.add_parser("collector", help="print the standalone collector script (pipe it to `python3 -` elsewhere)")
     return p
 
@@ -119,6 +131,8 @@ def scan(args, warn):
             errors.append(f"containers: {e}")
         if args.cmd == "containers" and not targets and not errors:
             warn("no running containers found")
+    if args.cmd == "remote":
+        remote(args, run, errors)
     if not args.no_epss and findings:
         scores = intel.epss_scores(os.path.dirname(os.path.abspath(args.cache)),
                                    {f["id"] for f in findings if f["id"].startswith("CVE-")})
@@ -129,6 +143,56 @@ def scan(args, warn):
         for f in findings:
             f["epss"] = f["epss_percentile"] = None
     return targets, findings, errors
+
+
+DEST = re.compile(r"^[A-Za-z0-9_.@:\[\]%+-]+$")
+
+
+def remote(args, run, errors):
+    """`sieve remote`: the collector in host mode, then (unless --no-containers) in container mode, each piped to the
+    remote python3 over ssh. Nothing is installed or written there; only package metadata comes back."""
+    if not DEST.match(args.dest) or args.dest.startswith("-"):
+        errors.append(f"remote: {args.dest!r} is not an ssh destination (user@host)")
+        return
+    label = args.dest.rsplit("@", 1)[-1]
+    ssh = {"port": args.port, "identity": args.identity, "opts": args.ssh_opt}
+    script = sources.collector_source()
+
+    def over_ssh(mode, sudo, read):
+        p, stream = sources.run_remote(sources.ssh_command(args.dest, sudo=sudo, mode=mode, **ssh), script)
+        failed = None
+        try:
+            read(stream)
+        except Exception as e:  # noqa: BLE001 — usually ssh gave no tar at all; its exit code says why
+            failed = e
+        rc = p.wait()
+        err = p.stderr.read()
+        if rc:
+            raise RuntimeError(sources.ssh_error(rc, err))
+        if failed:
+            raise failed
+
+    sudo = args.sudo and not args.dest.startswith("root@")
+    host = []
+    try:
+        over_ssh("host", sudo, lambda s: host.append(sources.read_host(s, label, kernel=args.kernel)))
+        run(host[0])
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"remote host {label}: {e}")
+        return
+    if args.no_containers:
+        return
+    errs, n = [], []
+    try:
+        over_ssh("", sudo,
+                 lambda s: n.extend(run(t) for t in sources.read_collected(s, errs, kernel=args.kernel)))
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"remote containers {label}: {e}")
+        return
+    errors += [f"remote collector {label}: {e}" for e in errs]
+    if not n and not errs:
+        host[0].notes.append("no running containers seen (no Docker, none running, or this user can't list them: "
+                             "try root@ or --sudo)")
 
 
 def _cut(s, n):

@@ -62,9 +62,10 @@ sieve containers    # every running Docker container on this machine (needs root
 sieve all           # both
 sieve path DIR ...  # project directories: lockfiles, node_modules, requirements, virtualenvs (see below)
 sieve verify        # has any installed file changed since its package manager put it there? (see Verify)
+sieve remote user@host   # another machine over ssh: what `sieve all` would find there, nothing installed there
 ```
 
-Options (for `host`, `containers`, `all` and `path`):
+Options (for `host`, `containers`, `all`, `path` and `remote`):
 
 | option | what it does |
 |---|---|
@@ -249,7 +250,30 @@ ALERT  EPSS  SEVERITY  IN USE  ID              PACKAGE       INSTALLED → FIXED
 1 in code running right now
 ```
 
-### Scanning containers on another machine
+### Scanning another machine
+
+```
+sieve remote admin@nas.example.com           # host packages + running containers
+sieve remote admin@nas.example.com --sudo    # root on the other side, with `sudo -n`: containers + full in-use
+sieve remote root@203.0.113.10 --no-containers --port 2222 -i ~/.ssh/scanner
+```
+
+The other machine needs python3 and nothing else. sieve pipes its standard-library collector to `python3 -I -` over
+ssh, once for the machine and once for its containers, so nothing is copied, installed or written there; package
+metadata comes back, and the matching happens on your side. It covers what `sieve all` would on that machine: dpkg,
+apk or rpm (rpm databases are read over there, with the same "unreadable is reported, never empty" rule), Python
+outside the OS, global npm, and every running container.
+
+In use works too: the check reads `/proc` on the machine it runs on, so it runs over there, inside the collector, and
+comes back with the package lists. The same rules apply as for a local scan: as a non-root user only your own
+processes can be read, so findings are **yes** or **?** and never **no**; log in as root or add `--sudo` for the full
+picture. Containers always need root (their roots are under `/proc/<pid>/root`).
+
+`--sudo` uses `sudo -n` and fails straight away rather than asking for a password. ssh runs in BatchMode, so it needs
+key auth and a known host key; `--ssh-opt` passes any other `-o` option (for example `--ssh-opt ProxyJump=bastion`).
+`--json`, `--sarif` and `--in-use-only` work the same as for a local scan.
+
+#### Without sieve's ssh
 
 The container collector is a single standard-library script. It reads, it doesn't install or write anything,
 and it doesn't need sieve on the Docker host:
@@ -383,7 +407,8 @@ now, read from `/proc/<pid>/maps` (every shared library and executable a process
 package through dpkg's `*.list` files, apk's file list, the rpm database (read once, with the package list), or a
 wheel's `RECORD` for compiled Python extensions. Only
 executable mappings count; data files every process maps (`/etc/ld.so.cache`, locale archives) don't. Containers
-are read the same way, by the collector, for every process of every container of that image. Three answers:
+are read the same way, by the collector, for every process of every container of that image, and `sieve remote`
+runs the whole check on the remote machine. Three answers:
 
 - **yes** (`loaded`): a file of that package is mapped by a running process.
 - **no** (`not loaded`): every process was read, the package ships native code (a shared library or an ELF
@@ -433,6 +458,8 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
   build named in the title instead.
 - **`sieve verify` can't check npm** (npm keeps no per-file checksums for installed packages), and it can't tell a
   careful attacker with root from nothing: they can rewrite the checksum lists too. See [Verify](#verify).
+- **`sieve verify` doesn't run over `sieve remote` yet.** Verify reads and hashes every installed file, so it
+  would have to run on the other machine; for now, install sieve there (or mount its / and use `--root`).
 - **Go binaries built before Go 1.18** store their build info differently and are counted but not read.
 - **In use is a snapshot**, and only native code is visible: pure-Python, npm, Go and Rust packages are always
   "unknown". See [In use](#in-use).

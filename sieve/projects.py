@@ -19,10 +19,11 @@ import os
 import re
 
 from . import osv
+# standard library only and shared with the standalone collector, so `sieve remote` reads node_modules the same way
+from .collect import NOT_A_VERSION as _NOT_A_VERSION, node_modules  # noqa: F401
 from .sources import Target
 
 SKIP_DIRS = {".git", ".hg", ".svn", "__pycache__", ".tox", ".mypy_cache", ".pytest_cache"}
-_NOT_A_VERSION = re.compile(r"[:/\s]|^(file|link|workspace|portal|git|github|http)")
 
 
 def _read(path, limit=64 << 20):
@@ -138,38 +139,6 @@ def parse_pnpm_lock(text):
             out.append((name, ver))
     if not out and re.search(r"^packages:\s*$", text, re.M):
         raise Unreadable("a packages section, but no entries sieve could read")
-    return out
-
-
-def node_modules(path, depth=12, with_path=False):
-    """Every package.json directly under a node_modules tree, nested node_modules included → [(name, version)]
-    (or [(name, version, package_dir)] with with_path)."""
-    out = []
-
-    def visit(nm, d):
-        if d < 0:
-            return
-        try:
-            entries = sorted(os.scandir(nm), key=lambda e: e.name)
-        except OSError:
-            return
-        for e in entries:
-            if not e.is_dir(follow_symlinks=False) or e.name.startswith("."):
-                continue
-            pkgs = [e.path]
-            if e.name.startswith("@"):                    # scoped: node_modules/@scope/name
-                try:
-                    pkgs = [x.path for x in os.scandir(e.path) if x.is_dir(follow_symlinks=False)]
-                except OSError:
-                    pkgs = []
-            for p in pkgs:
-                nv = osv.parse_npm(_read(os.path.join(p, "package.json"), 1 << 20) or "")
-                if nv and _ok(nv[1]):
-                    out.append((*nv, p) if with_path else nv)
-                inner = os.path.join(p, "node_modules")
-                if os.path.isdir(inner):
-                    visit(inner, d - 1)
-    visit(path, depth)
     return out
 
 
