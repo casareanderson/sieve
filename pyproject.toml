@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "jsonschema>=4.18"]   # jsonschema: SBOM schema checks in tests only
 
 [project.urls]
 Homepage = "https://github.com/casareanderson/sieve"
