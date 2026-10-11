@@ -1,0 +1,193 @@
+{
+ "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+ "bomFormat": "CycloneDX",
+ "specVersion": "1.6",
+ "serialNumber": "urn:uuid:07ab811c-85f0-4be1-acde-13026bbfbcad",
+ "version": 1,
+ "metadata": {
+  "timestamp": "2026-10-11T15:39:47Z",
+  "tools": {
+   "components": [
+    {
+     "type": "application",
+     "author": "anchore",
+     "name": "syft",
+     "version": "1.18.1"
+    }
+   ]
+  },
+  "component": {
+   "bom-ref": "d6fb2e19df7692d6",
+   "type": "container",
+   "name": "python",
+   "version": "3.11-slim-bookworm"
+  }
+ },
+ "components": [
+  {
+   "bom-ref": "pkg:nuget/Simple%20Launcher@1.1.0.14?package-id=1658c39e675c49b9",
+   "type": "library",
+   "name": "Simple Launcher",
+   "version": "1.1.0.14",
+   "purl": "pkg:nuget/Simple%20Launcher@1.1.0.14"
+  },
+  {
+   "bom-ref": "pkg:nuget/Simple%20Launcher@1.1.0.14?package-id=000d310d129592c4",
+   "type": "library",
+   "name": "Simple Launcher",
+   "version": "1.1.0.14",
+   "purl": "pkg:nuget/Simple%20Launcher@1.1.0.14"
+  },
+  {
+   "bom-ref": "pkg:nuget/Simple%20Launcher@1.1.0.14?package-id=022b022756238702",
+   "type": "library",
+   "name": "Simple Launcher",
+   "version": "1.1.0.14",
+   "purl": "pkg:nuget/Simple%20Launcher@1.1.0.14"
+  },
+  {
+   "bom-ref": "pkg:nuget/Simple%20Launcher@1.1.0.14?package-id=50b1ed19888df43a",
+   "type": "library",
+   "name": "Simple Launcher",
+   "version": "1.1.0.14",
+   "purl": "pkg:nuget/Simple%20Launcher@1.1.0.14"
+  },
+  {
+   "bom-ref": "pkg:nuget/Simple%20Launcher@1.1.0.14?package-id=26c1f0f6084ccf06",
+   "type": "library",
+   "name": "Simple Launcher",
+   "version": "1.1.0.14",
+   "purl": "pkg:nuget/Simple%20Launcher@1.1.0.14"
+  },
+  {
+   "bom-ref": "pkg:nuget/Simple%20Launcher@1.1.0.14?package-id=28cf50980a74ba8c",
+   "type": "library",
+   "name": "Simple Launcher",
+   "version": "1.1.0.14",
+   "purl": "pkg:nuget/Simple%20Launcher@1.1.0.14"
+  },
+  {
+   "bom-ref": "pkg:deb/debian/adduser@3.134?arch=all&distro=debian-12&package-id=0d50d654eb648ebd",
+   "type": "library",
+   "publisher": "Debian Adduser Developers <adduser@packages.debian.org>",
+   "name": "adduser",
+   "version": "3.134",
+   "purl": "pkg:deb/debian/adduser@3.134?arch=all&distro=debian-12"
+  },
+  {
+   "bom-ref": "pkg:deb/debian/apt@2.6.1?arch=amd64&distro=debian-12&package-id=df997d23aca38935",
+   "type": "library",
+   "publisher": "APT Development Team <deity@lists.debian.org>",
+   "name": "apt",
+   "version": "2.6.1",
+   "purl": "pkg:deb/debian/apt@2.6.1?arch=amd64&distro=debian-12"
+  },
+  {
+   "bom-ref": "pkg:pypi/autocommand@2.2.2?package-id=dded7b2c62436c0c",
+   "type": "library",
+   "name": "autocommand",
+   "version": "2.2.2",
+   "purl": "pkg:pypi/autocommand@2.2.2"
+  },
+  {
+   "bom-ref": "pkg:pypi/backports-tarfile@1.2.0?package-id=cb40fd882887c78d",
+   "type": "library",
+   "name": "backports-tarfile",
+   "version": "1.2.0",
+   "purl": "pkg:pypi/backports-tarfile@1.2.0"
+  },
+  {
+   "bom-ref": "pkg:deb/debian/base-files@12.4%2Bdeb12u15?arch=amd64&distro=debian-12&package-id=88fc42a7ce727d34",
+   "type": "library",
+   "publisher": "Santiago Vila <sanvila@debian.org>",
+   "name": "base-files",
+   "version": "12.4+deb12u15",
+   "purl": "pkg:deb/debian/base-files@12.4%2Bdeb12u15?arch=amd64&distro=debian-12"
+  },
+  {
+   "bom-ref": "pkg:deb/debian/base-passwd@3.6.1?arch=amd64&distro=debian-12&package-id=71f2491a856202ca",
+   "type": "library",
+   "publisher": "Colin Watson <cjwatson@debian.org>",
+   "name": "base-passwd",
+   "version": "3.6.1",
+   "purl": "pkg:deb/debian/base-passwd@3.6.1?arch=amd64&distro=debian-12"
+  },
+  {
+   "bom-ref": "pkg:deb/debian/bash@5.2.15-2%2Bb13?arch=amd64&distro=debian-12&package-id=588245fd344a1a8c&upstream=bash%405.2.15-2",
+   "type": "library",
+   "publisher": "Matthias Klose <doko@debian.org>",
+   "name": "bash",
+   "version": "5.2.15-2+b13",
+   "purl": "pkg:deb/debian/bash@5.2.15-2%2Bb13?arch=amd64&distro=debian-12&upstream=bash%405.2.15-2"
+  },
+  {
+   "bom-ref": "pkg:deb/debian/bsdutils@1:2.38.1-5%2Bdeb12u3?arch=amd64&distro=debian-12&package-id=ab6e005a8a4c9498&upstream=util-linux%402.38.1-5%2Bdeb12u3",
+   "type": "library",
+   "publisher": "util-linux packagers <util-linux@packages.debian.org>",
+   "name": "bsdutils",
+   "version": "1:2.38.1-5+deb12u3",
+   "purl": "pkg:deb/debian/bsdutils@1:2.38.1-5%2Bdeb12u3?arch=amd64&distro=debian-12&upstream=util-linux%402.38.1-5%2Bdeb12u3"
+  },
+  {
+   "bom-ref": "pkg:pypi/importlib-metadata@8.0.0?package-id=ef72849b3cf370e0",
+   "type": "library",
+   "name": "importlib-metadata",
+   "version": "8.0.0",
+   "purl": "pkg:pypi/importlib-metadata@8.0.0"
+  },
+  {
+   "bom-ref": "pkg:pypi/inflect@7.3.1?package-id=d7e59e305df9b723",
+   "type": "library",
+   "name": "inflect",
+   "version": "7.3.1",
+   "purl": "pkg:pypi/inflect@7.3.1"
+  },
+  {
+   "bom-ref": "pkg:pypi/jaraco-collections@5.1.0?package-id=4bfa77cfeab890ab",
+   "type": "library",
+   "name": "jaraco-collections",
+   "version": "5.1.0",
+   "purl": "pkg:pypi/jaraco-collections@5.1.0"
+  },
+  {
+   "bom-ref": "pkg:pypi/jaraco-context@5.3.0?package-id=c3a32772bc163e5e",
+   "type": "library",
+   "name": "jaraco-context",
+   "version": "5.3.0",
+   "purl": "pkg:pypi/jaraco-context@5.3.0"
+  },
+  {
+   "bom-ref": "pkg:generic/python@3.11.17?package-id=e0558c9a7e516623",
+   "type": "application",
+   "name": "python",
+   "version": "3.11.17",
+   "purl": "pkg:generic/python@3.11.17"
+  },
+  {
+   "bom-ref": "os:debian@12",
+   "type": "operating-system",
+   "name": "debian",
+   "version": "12",
+   "swid": {
+    "tagId": "debian",
+    "name": "debian",
+    "version": "12"
+   },
+   "externalReferences": [
+    {
+     "url": "https://bugs.debian.org/",
+     "type": "issue-tracker"
+    },
+    {
+     "url": "https://www.debian.org/",
+     "type": "website"
+    },
+    {
+     "url": "https://www.debian.org/support",
+     "comment": "support",
+     "type": "other"
+    }
+   ]
+  }
+ ]
+}

@@ -63,14 +63,17 @@ sieve all           # both
 sieve path DIR ...  # project directories: lockfiles, node_modules, requirements, virtualenvs (see below)
 sieve verify        # has any installed file changed since its package manager put it there? (see Verify)
 sieve remote user@host   # another machine over ssh: what `sieve all` would find there, nothing installed there
+sieve sbom FILE ...      # scan SBOMs made by other tools (CycloneDX or SPDX JSON; see SBOM)
 ```
 
-Options (for `host`, `containers`, `all`, `path` and `remote`):
+Options (for `host`, `containers`, `all`, `path`, `remote` and `sbom`):
 
 | option | what it does |
 |---|---|
 | `--json` | machine-readable output |
 | `--sarif` | SARIF 2.1.0 output for GitHub code scanning (see [Code scanning](#code-scanning)) |
+| `--sbom cyclonedx\|spdx` | print an SBOM of what was read instead of scanning it (see [SBOM](#sbom)) |
+| `--with-vulns` | with `--sbom cyclonedx`: scan as usual and add the findings to the SBOM |
 | `--min-severity low\|medium\|high\|critical` | hide findings below this severity (known-exploited findings are always shown) |
 | `--kev-only` | only findings in CISA's known-exploited list |
 | `--fixable-only` | only findings with a fixed version available |
@@ -356,6 +359,35 @@ a KEV finding is scored at least 9.0 so GitHub files it as critical. A package h
 points at `<target>/<package>`. Alerts are fingerprinted on target, package and advisory, not version: upgrading to
 a version that is still affected keeps the same alert, and fixing it closes the alert on the next upload.
 
+### SBOM
+
+**Out.** `--sbom cyclonedx` (CycloneDX 1.6) or `--sbom spdx` (SPDX 2.3) prints an SBOM of exactly what a scan
+reads, for any target: `host`, `--root`, `containers`, `all`, `path` or `remote`. Nothing is sent to OSV, so it
+works offline.
+
+```
+sieve host --sbom cyclonedx > host.cdx.json
+sudo sieve containers --sbom spdx > images.spdx.json
+sieve path ~/project --sbom cyclonedx --with-vulns > project.cdx.json   # + the findings, linked to their packages
+```
+
+Each scanned target (the machine, each container image, each project directory) is one component with its
+packages inside it. Every package has a package URL: OS packages carry their distro (`distro=debian-12`), their
+source package (`upstream=`) and, for rpm, the epoch, the way syft writes them, so other tools read them too.
+`--with-vulns` adds the findings as CycloneDX `vulnerabilities`, each pointing at the package it affects, with
+KEV, EPSS, malicious and in-use as properties. What isn't in it: licences, file lists and hashes (sieve doesn't
+read those), and dependency relationships between packages.
+
+**In.** `sieve sbom FILE ...` scans SBOMs made by other tools (syft, trivy, cdxgen, GitHub's dependency graph):
+CycloneDX 1.4-1.6 or SPDX 2.2/2.3, JSON. It reads each package URL and runs the same OSV, KEV and EPSS ranking as
+any other scan. OS packages need a `distro=` qualifier to pick the right advisory feed. Anything sieve can't
+check (no package URL, no version, a type OSV doesn't cover such as `pkg:generic`) is counted in the output and
+marks the scan partial, so a thin SBOM never looks like a clean one.
+
+```
+syft alpine:3.20 -o cyclonedx-json > a.cdx.json && sieve sbom a.cdx.json
+```
+
 ### JSON
 
 `--json` prints `targets` (what was scanned, OS, package count, status, notes), `errors`, `summary` and
@@ -460,6 +492,8 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
   careful attacker with root from nothing: they can rewrite the checksum lists too. See [Verify](#verify).
 - **`sieve verify` doesn't run over `sieve remote` yet.** Verify reads and hashes every installed file, so it
   would have to run on the other machine; for now, install sieve there (or mount its / and use `--root`).
+- **SBOMs from other tools are only as good as their package URLs.** GitHub's dependency graph, for example,
+  often lists Python requirements without a version; those are counted, not checked.
 - **Go binaries built before Go 1.18** store their build info differently and are counted but not read.
 - **In use is a snapshot**, and only native code is visible: pure-Python, npm, Go and Rust packages are always
   "unknown". See [In use](#in-use).

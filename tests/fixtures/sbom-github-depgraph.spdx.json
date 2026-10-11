@@ -1,0 +1,97 @@
+{
+ "SPDXID": "SPDXRef-DOCUMENT",
+ "comment": "Exact versions could not be resolved for some packages. For more information: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-the-dependency-graph#dependencies-included.",
+ "creationInfo": {
+  "created": "2026-10-11T15:39:56Z",
+  "creators": [
+   "Tool: protobom-v0.0.0-20261009191136-5f171f46fb2e+dirty",
+   "Tool: GitHub.com-Dependency-Graph",
+   "Tool: dependabot"
+  ]
+ },
+ "dataLicense": "CC0-1.0",
+ "documentNamespace": "https://spdx.org/spdxdocs/protobom/6415796b-40e7-400b-953c-d571861b9699",
+ "name": "com.github.psf/requests",
+ "packages": [
+  {
+   "SPDXID": "SPDXRef-pypi-setuptools-1a783b",
+   "downloadLocation": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceLocator": "pkg:pypi/setuptools",
+     "referenceType": "purl"
+    }
+   ],
+   "filesAnalyzed": false,
+   "name": "setuptools"
+  },
+  {
+   "SPDXID": "SPDXRef-pypi-chardet-288059",
+   "downloadLocation": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceLocator": "pkg:pypi/chardet",
+     "referenceType": "purl"
+    }
+   ],
+   "filesAnalyzed": false,
+   "name": "chardet"
+  },
+  {
+   "SPDXID": "SPDXRef-pypi-urllib3-a1e416",
+   "downloadLocation": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceLocator": "pkg:pypi/urllib3",
+     "referenceType": "purl"
+    }
+   ],
+   "filesAnalyzed": false,
+   "name": "urllib3"
+  },
+  {
+   "SPDXID": "SPDXRef-pypi-wheel-0b3e5c",
+   "downloadLocation": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceLocator": "pkg:pypi/wheel",
+     "referenceType": "purl"
+    }
+   ],
+   "filesAnalyzed": false,
+   "name": "wheel"
+  },
+  {
+   "SPDXID": "SPDXRef-pypi-httpbin-d6e929",
+   "downloadLocation": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceLocator": "pkg:pypi/httpbin",
+     "referenceType": "purl"
+    }
+   ],
+   "filesAnalyzed": false,
+   "name": "httpbin"
+  },
+  {
+   "SPDXID": "SPDXRef-pypi-pysocks-d1f0ba",
+   "downloadLocation": "NOASSERTION",
+   "externalRefs": [
+    {
+     "referenceCategory": "PACKAGE-MANAGER",
+     "referenceLocator": "pkg:pypi/pysocks",
+     "referenceType": "purl"
+    }
+   ],
+   "filesAnalyzed": false,
+   "name": "pysocks"
+  }
+ ],
+ "relationships": [],
+ "spdxVersion": "SPDX-2.3"
+}

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Output
+
+- `--sbom cyclonedx|spdx`: an SBOM (CycloneDX 1.6 or SPDX 2.3 JSON) of what a scan reads, for every target kind,
+  without asking OSV anything. Package URLs carry `distro=`, `upstream=` and the rpm epoch the way syft writes them.
+  `--with-vulns` adds the findings as CycloneDX `vulnerabilities` linked to their packages. Checked against the
+  official schemas in the tests. Standard library only, and loaded only when asked for.
+
+### Scanning
+
+- `sieve sbom FILE ...`: scan SBOMs made by other tools (CycloneDX 1.4-1.6, SPDX 2.2/2.3 JSON) with the same OSV,
+  KEV and EPSS ranking. OS package URLs go back through the same distro mapping a host scan uses. Components it
+  can't check (no package URL, no version, a type OSV doesn't cover) are counted and mark the scan partial.
+
 ## 0.2.0 (2026-10-11)
 
 ### Scanning
