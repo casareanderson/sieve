@@ -1,0 +1,34 @@
+name: setup-check
+
+# Runs the steps in docs/SETUP.md on a fresh ubuntu-latest runner, so the setup guide can't quietly go stale.
+# Only fenced blocks whose info string is "sh setup-check" (or "bash setup-check") are run, in order, from an
+# empty directory, with bash -euo pipefail. Blocks that need hardware, accounts or secrets aren't marked and the
+# guide says so next to them.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 6 * * 3"
+  push:
+    branches: [main, master]
+    paths:
+      - docs/SETUP.md
+      - .github/workflows/setup-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guide:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract the tested steps from docs/SETUP.md
+        run: |
+          awk '/^```(ba)?sh setup-check/{f=1; next} /^```/{f=0} f' docs/SETUP.md > "$RUNNER_TEMP/setup-check.sh"
+          test -s "$RUNNER_TEMP/setup-check.sh"
+          cat "$RUNNER_TEMP/setup-check.sh"
+      - name: Run them from an empty directory
+        run: |
+          mkdir -p "$RUNNER_TEMP/fresh" && cd "$RUNNER_TEMP/fresh"
+          bash -euxo pipefail "$RUNNER_TEMP/setup-check.sh"

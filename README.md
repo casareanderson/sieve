@@ -27,6 +27,8 @@ on your side.
 
 ## Install
 
+Full step-by-step setup, tested every week on a fresh machine: [docs/SETUP.md](docs/SETUP.md).
+
 ```
 pipx install git+https://github.com/casareanderson/sieve
 ```
