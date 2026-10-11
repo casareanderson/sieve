@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `--sarif`: SARIF 2.1.0 output for GitHub code scanning, validated against the OASIS schema; the Action's new
+  `sarif` input writes it from the same scan and returns its path as the `sarif` output.
+
 ## 0.1.0 (2026-10-10)
 
 First release, extracted from warden's vulnerability scanner.
