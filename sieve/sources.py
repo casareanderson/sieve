@@ -7,6 +7,7 @@ import sys
 import tarfile
 
 from . import osv
+from .collect import rpm_packages          # standard library only, shared with the standalone collector
 
 COLLECTOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "collect.py")
 PY_DIRS = ["usr/lib/python3*/site-packages", "usr/lib/python3*/dist-packages", "usr/lib/python3/dist-packages",
@@ -36,6 +37,8 @@ def os_identity(files):
     eco, label = osv.ecosystem(osr, (files.get("etc/alpine-release") or "").strip())
     if files.get("lib/apk/db/installed"):
         entries = osv.parse_apk(files["lib/apk/db/installed"])
+    elif files.get("rpm"):
+        entries = osv.parse_rpm(files["rpm"])
     else:
         entries = osv.parse_dpkg(files.get("var/lib/dpkg/status") or "")
     return eco, label, entries
@@ -75,6 +78,28 @@ def _os_owned(root, apk_db):
     return owned
 
 
+def rpm_owned(path):
+    """On rpm distros pip installs into /usr/local (Fedora 27+, EL8+); a dist-info under /usr/lib*/python3* came with
+    an rpm, whose advisories already cover it."""
+    return path.startswith(("/usr/lib/python", "/usr/lib64/python"))
+
+
+def rpm_list(root="/"):
+    """→ (rpm list text or "", error or None). Reads the database directly; with an unreadable one on the live
+    machine, falls back to the rpm binary when there is one."""
+    _fmt, rows, err = rpm_packages(root)
+    if err and os.path.abspath(root) == "/" and shutil.which("rpm"):
+        try:
+            out = subprocess.run(["rpm", "-qa", "--qf", "%{NAME}\\t%{EPOCH}\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\t"
+                                  "%{SOURCERPM}\\n"], capture_output=True, text=True, timeout=300).stdout
+            rows = sorted({l.replace("(none)", "") for l in out.splitlines() if l and not l.startswith("gpg-pubkey\t")})
+            if rows:
+                return "\n".join(rows), None
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return "\n".join(rows), err
+
+
 def python_packages(root="/"):
     """[(name, version, path)] from dist-info / egg-info under the usual system site directories."""
     out, seen = [], set()
@@ -94,7 +119,7 @@ def python_packages(root="/"):
 
 
 def host(root="/", kernel=False):
-    """The local machine: OS packages from dpkg/apk plus Python packages pip installed outside the OS."""
+    """The local machine: OS packages from dpkg/apk/rpm plus Python packages pip installed outside the OS."""
     t = Target("host", "host")
     files = {}
     for rel in ("etc/os-release", "usr/lib/os-release", "etc/alpine-release", "var/lib/dpkg/status",
@@ -102,19 +127,26 @@ def host(root="/", kernel=False):
         txt = _read(os.path.join(root, rel))
         if txt is not None:
             files[rel] = txt
+    rpm, rpm_err = ("", None) if files.get("var/lib/dpkg/status") or files.get("lib/apk/db/installed") \
+        else rpm_list(root)
+    if rpm:
+        files["rpm"] = rpm
     eco, label, entries = os_identity(files)
     t.os = label
     entries, skipped = split_kernel(entries, kernel)
     if skipped:
         t.notes.append(f"{skipped} kernel packages skipped (use --kernel to include them)")
+    if rpm_err:
+        t.notes.append(rpm_err)
+        t.status = "partial"
     if entries and not eco:
         t.notes.append(f"{label}: OSV has no advisory feed for this OS; OS packages not checked")
         t.status = "partial"
-    elif not entries:
-        t.notes.append("no dpkg or apk package database found")
+    elif not entries and not rpm_err:
+        t.notes.append("no dpkg, apk or rpm package database found")
     pkgs = osv.os_packages(eco, entries) if eco else []
     owned = _os_owned(root, files.get("lib/apk/db/installed"))
-    py = [p for p in python_packages(root) if p[2] not in owned]
+    py = [p for p in python_packages(root) if p[2] not in owned and not (rpm and rpm_owned(p[2]))]
     pkgs += [("PyPI", n, v, n, v) for n, v, _ in py]
     t.pkgs = sorted(set(pkgs))
     t.packages = len(entries) + len(py)
@@ -135,6 +167,12 @@ def image_target(name, files, kernel=False):
     statusd = [v.decode("utf-8", "replace") for k, v in osf.items() if k.startswith("statusd_")]
     if statusd and not text.get("var/lib/dpkg/status"):
         text["var/lib/dpkg/status"] = "\n\n".join(statusd)          # distroless keeps one stanza per file
+    rpm = osf.get("rpm_packages", b"").decode("utf-8", "replace")
+    if rpm.startswith("#error"):
+        t.notes.append(rpm.splitlines()[0][7:])
+        t.status = "partial"
+    elif rpm:
+        text["rpm"] = rpm
     eco, label, entries = os_identity(text)
     entries, skipped = split_kernel(entries, kernel)
     if skipped:
@@ -147,6 +185,8 @@ def image_target(name, files, kernel=False):
         kind = k.split("/", 1)[0]
         body = v.split(b"\n", 1)[1] if b"\n" in v else b""
         if kind in ("py", "npm"):                       # the collector already reduced these to name\nversion
+            if kind == "py" and text.get("rpm") and rpm_owned(v.split(b"\n", 1)[0].decode("utf-8", "replace")):
+                continue                                # came with an rpm: its advisories cover it
             nv = body.decode("utf-8", "replace").split("\n")
             if len(nv) == 2 and nv[0] and nv[1]:
                 e = "PyPI" if kind == "py" else "npm"
@@ -165,7 +205,8 @@ def image_target(name, files, kernel=False):
         t.notes.append(f"{unread} Go binaries older than Go 1.18 not read")
     t.os = label if (entries or eco) else "no OS packages"
     t.pkgs = sorted(set(pkgs))
-    t.packages = len(t.pkgs)
+    # installed packages, not OSV queries (an rpm is asked about under its binary AND source name)
+    t.packages = len(entries) + len({p for p in t.pkgs if p[0] in ("PyPI", "npm", "Go", "crates.io")})
     return t
 
 

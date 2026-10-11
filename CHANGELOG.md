@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Scanning
+
+- RPM distributions: AlmaLinux, Rocky Linux, RHEL (including UBI images) and openSUSE Leap and Tumbleweed, for
+  host and container scans. The rpm database is read directly (SQLite, ndb and BerkeleyDB), so no `rpm` binary is
+  needed; an unreadable database is reported, never treated as empty. On a live host with an unreadable database
+  sieve falls back to `rpm -qa` when the binary is there.
+- rpm version ordering (epoch, `~`, `^`, rpm's segment rules), checked against rpm's own test cases.
+- RHSA/ALSA/RLSA/SUSE-SU errata are expanded into their CVEs and keep the distro's Critical/Important/Moderate/Low
+  rating. AlmaLinux errata list their CVEs under `related`, which is now kept in the cache (cache schema 3).
+- rpm packages are queried under both their binary and source names, because Rocky indexes source packages while
+  AlmaLinux and Red Hat index binaries.
+- Fedora, CentOS Stream, Oracle Linux and Amazon Linux are read and counted, with a note that OSV has no feed for
+  them.
+- Python packages under `/usr/lib*/python3*` on rpm distributions are left to the rpm advisories, as dpkg-owned
+  ones already were.
+- Containers: the package count is installed packages, not OSV queries.
+- `kernel`, `kernel-core`, `kernel-modules` and friends are skipped like `linux-image-*` unless `--kernel`.
+- openSUSE "… on GA media" records whose title names a build at or below the installed one are ignored: one gave
+  bash 5.3 on Tumbleweed a fixed version of 7.0 and flagged Shellshock.
+
+### Output
+
 - `--sarif`: SARIF 2.1.0 output for GitHub code scanning, validated against the OASIS schema; the Action's new
   `sarif` input writes it from the same scan and returns its path as the `sarif` output.
 
