@@ -1,4 +1,5 @@
-"""Container package collector. Standalone: no imports from sieve, standard library only.
+"""Package collector for containers, and for a whole machine over ssh. Standalone: no imports from sieve, standard
+library only.
 
 Run it as root on a Docker host, either directly or with its source fed on stdin (`python3 -`), for example
 over ssh:  sieve collector | ssh root@dockerhost python3 - > packages.tgz ;  sieve containers --from-tar packages.tgz
@@ -20,11 +21,26 @@ writes a gzipped tar to stdout holding only package metadata. It installs nothin
   <n>/inuse        JSON: which of the image's packages have code mapped into a running process of ANY container
                    of that image (see inuse_report)
   ERRORS           one line per image that could not be read
+
+`python3 - host` (what `sieve remote` runs over ssh) collects the machine itself instead, with the same rules as
+`sieve host` (sources.host uses the helpers below, so the two can't drift):
+
+  os/...           os-release, alpine-release, dpkg status, apk db
+  os/rpm_packages  as above ("#format …" or "#error …" first); falls back to `rpm -qa` when the database can't be read
+  owned            one *.dist-info / *.egg-info path per line that dpkg or apk installed
+  py/<i>           "path\\nname\\nversion" from each dist-info / egg-info in the system site directories
+  npm_owned        one global node_modules package directory per line that dpkg installed
+  npm/<i>          "path\\nname\\nversion" for each globally installed npm package (the global prefixes plus any
+                   `prefix=` set in an npmrc)
+  inuse            JSON: which of the machine's packages have code mapped into a running process (inuse_report),
+                   or inuse_note: why it wasn't checked
 """
+import glob
 import io
 import json
 import mmap
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -34,6 +50,16 @@ import re
 OS_FILES = ["etc/os-release", "usr/lib/os-release", "etc/alpine-release", "etc/debian_version", "etc/lsb-release",
             "var/lib/dpkg/status", "lib/apk/db/installed"]
 MAGIC = b"\xff Go buildinf:"
+# a whole machine (`sieve host`, and `python3 - host` for `sieve remote`)
+HOST_FILES = ["etc/os-release", "usr/lib/os-release", "etc/alpine-release", "var/lib/dpkg/status",
+              "lib/apk/db/installed"]
+NPM_DIRS = ["usr/lib/node_modules", "usr/local/lib/node_modules"]
+NPMRC = ["etc/npmrc", "usr/etc/npmrc", "usr/local/etc/npmrc", "root/.npmrc"]
+NOT_A_VERSION = re.compile(r"[:/\s]|^(file|link|workspace|portal|git|github|http)")
+PY_DIRS = ["usr/lib/python3*/site-packages", "usr/lib/python3*/dist-packages", "usr/lib/python3/dist-packages",
+           "usr/lib64/python3*/site-packages", "usr/local/lib/python3*/site-packages",
+           "usr/local/lib/python3*/dist-packages"]
+
 
 
 def head(path, n):
@@ -310,6 +336,164 @@ def rpm_packages(root="/", files=None, details=None):
             return fmt, [], f"rpm database {rel} ({fmt}) held {len(blobs)} records but none could be read"
         return fmt, sorted(rows), None
     return None, [], None
+
+
+def rpm_list(root="/", files=None):
+    """→ (rpm list text or "", error or None). Reads the database directly; with an unreadable one on the live
+    machine, falls back to the rpm binary when there is one. `files`: as for rpm_packages (in-use)."""
+    _fmt, rows, err = rpm_packages(root, files)
+    if err and os.path.abspath(root) == "/" and shutil.which("rpm"):
+        try:
+            out = subprocess.run(["rpm", "-qa", "--qf", "%{NAME}\\t%{EPOCH}\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\t"
+                                  "%{SOURCERPM}\\n"], capture_output=True, text=True, timeout=300).stdout
+            rows = sorted({l.replace("(none)", "") for l in out.splitlines() if l and not l.startswith("gpg-pubkey\t")})
+            if rows:
+                return "\n".join(rows), None
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return "\n".join(rows), err
+
+
+def os_owned(root, apk_db):
+    """Directories that the OS package manager installed. Python packages there come from a dpkg/apk package and
+    are already covered by the distro's advisories (with its backported fixes); asking PyPI about them as well would
+    report fixes the distro has already applied."""
+    owned = set()
+    for lst in glob.glob(os.path.join(root, "var/lib/dpkg/info/*.list")):
+        for line in (head(lst, 16 << 20) or b"").decode("utf-8", "replace").splitlines():
+            if line.endswith((".dist-info", ".egg-info")):
+                owned.add(line.strip())
+    for line in (apk_db or "").splitlines():
+        if line.startswith("F:"):
+            folder = "/" + line[2:]
+            if folder.endswith((".dist-info", ".egg-info")):
+                owned.add(folder)
+    return owned
+
+
+def python_dists(root="/"):
+    """[(name, version, path)] from dist-info / egg-info under the usual system site directories."""
+    out, seen = [], set()
+    for pat in PY_DIRS:
+        for d in glob.glob(os.path.join(root, pat)):
+            for meta in glob.glob(os.path.join(d, "*.dist-info", "METADATA")) + \
+                    glob.glob(os.path.join(d, "*.egg-info", "PKG-INFO")) + glob.glob(os.path.join(d, "*.egg-info")):
+                path = os.path.dirname(meta) if meta.endswith(("METADATA", "PKG-INFO")) else meta
+                real = os.path.realpath(path)
+                if real in seen or os.path.isdir(meta):
+                    continue
+                seen.add(real)
+                nv = pymeta(head(meta, 4096))
+                if nv:
+                    name, ver = nv.decode().split("\n")
+                    out.append((name, ver, "/" + os.path.relpath(path, root)))
+    return out
+
+
+def _text(path, n=1 << 20):
+    d = head(path, n)
+    return d.decode("utf-8", "replace") if d is not None else None
+
+
+def node_modules(path, depth=12, with_path=False):
+    """Every package.json directly under a node_modules tree, nested node_modules included → [(name, version)]
+    (or [(name, version, package_dir)] with with_path). Only concrete registry versions, not paths, URLs or links."""
+    out = []
+
+    def visit(nm, d):
+        if d < 0:
+            return
+        try:
+            entries = sorted(os.scandir(nm), key=lambda e: e.name)
+        except OSError:
+            return
+        for e in entries:
+            if not e.is_dir(follow_symlinks=False) or e.name.startswith("."):
+                continue
+            pkgs = [e.path]
+            if e.name.startswith("@"):                    # scoped: node_modules/@scope/name
+                try:
+                    pkgs = [x.path for x in os.scandir(e.path) if x.is_dir(follow_symlinks=False)]
+                except OSError:
+                    pkgs = []
+            for p in pkgs:
+                nv = npmmeta(head(os.path.join(p, "package.json"), 1 << 20))
+                if nv:
+                    name, ver = nv.decode().split("\n")
+                    if not NOT_A_VERSION.search(ver):
+                        out.append((name, ver, p) if with_path else (name, ver))
+                inner = os.path.join(p, "node_modules")
+                if os.path.isdir(inner):
+                    visit(inner, d - 1)
+    visit(path, depth)
+    return out
+
+
+def npm_global(root="/"):
+    """Globally installed npm packages → [(name, version, path)]: the usual global prefixes plus any `prefix=` set in
+    an npmrc. Read straight from package.json, so node doesn't need to be installed (or trusted) to scan it."""
+    dirs = list(NPM_DIRS)
+    for rc in NPMRC:
+        m = re.search(r"^\s*prefix\s*=\s*(\S+)", _text(os.path.join(root, rc)) or "", re.M)
+        if m and m.group(1).startswith("/"):
+            dirs.append(m.group(1).lstrip("/") + "/lib/node_modules")
+    out, seen = [], set()
+    for d in dirs:
+        full = os.path.join(root, d)
+        real = os.path.realpath(full)
+        if real in seen or not os.path.isdir(full):
+            continue
+        seen.add(real)
+        out += [(n, v, "/" + os.path.relpath(p, root)) for n, v, p in node_modules(full, with_path=True)]
+    return out
+
+
+def npm_owned(root="/"):
+    """Top-level global npm packages that dpkg installed (Debian's `npm` package ships some): its advisories cover them."""
+    owned = set()
+    for lst in glob.glob(os.path.join(root, "var/lib/dpkg/info/*.list")):
+        for line in (_text(lst, 16 << 20) or "").splitlines():
+            m = re.match(r"^(.*/node_modules/(?:@[^/]+/)?[^/@]+)$", line.strip())
+            if m and any(m.group(1).startswith("/" + d + "/") for d in NPM_DIRS):
+                owned.add(m.group(1))
+    return owned
+
+
+def host_main(root="/"):
+    """`python3 - host`: this machine, for `sieve remote`. Reads only; the tar goes to stdout."""
+    out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|gz")
+
+    def add(name, data):
+        ti = tarfile.TarInfo(name)
+        ti.size = len(data)
+        out.addfile(ti, io.BytesIO(data))
+    apk = None
+    for rel in HOST_FILES:
+        d = head(os.path.join(root, rel), 64 << 20)
+        if d is not None:
+            add("os/" + rel.replace("/", "_"), d)
+            if rel == "lib/apk/db/installed":
+                apk = d.decode("utf-8", "replace")
+    rpm_files = {}                              # {path: package}, from the same rpmdb read, for in-use
+    if not (os.path.isfile(os.path.join(root, "var/lib/dpkg/status")) or apk):
+        rows, err = rpm_list(root, rpm_files)
+        if rows or err:
+            add("os/rpm_packages", (f"#error {err}" if err else "#format host\n" + rows).encode())
+    add("owned", "\n".join(sorted(os_owned(root, apk))).encode())
+    for k, (name, ver, path) in enumerate(python_dists(root), 1):
+        add(f"py/{k}", f"{path}\n{name}\n{ver}".encode())
+    add("npm_owned", "\n".join(sorted(npm_owned(root))).encode())
+    for k, (name, ver, path) in enumerate(npm_global(root), 1):
+        add(f"npm/{k}", f"{path}\n{name}\n{ver}".encode())
+    # in use is read HERE, on the scanned machine: /proc belongs to the machine the collector runs on
+    if os.path.realpath(root) != "/":
+        add("inuse_note", b"in-use not checked with --root (run sieve on the machine itself for that)")
+    else:
+        try:
+            add("inuse", json.dumps(inuse_report(root, host_pids(), rpm_files=rpm_files)).encode())
+        except Exception as e:  # noqa: BLE001 — in-use is extra information, never a reason to fail the scan
+            add("inuse_note", f"in-use check failed: {type(e).__name__}: {e}".encode())
+    out.close()
 
 
 def walk_root(root, skip, add, p):
@@ -609,4 +793,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    host_main() if sys.argv[1:2] == ["host"] else main()
