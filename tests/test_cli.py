@@ -105,4 +105,4 @@ def test_version_matches_package(capsys):
     with pytest.raises(SystemExit) as e:
         cli.main(["--version"])
     assert e.value.code == 0
-    assert capsys.readouterr().out.strip() == f"sieve {__version__}" == "sieve 0.2.0"
+    assert capsys.readouterr().out.strip() == f"sieve {__version__}" == "sieve 0.3.0"
