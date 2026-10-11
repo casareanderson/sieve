@@ -260,6 +260,10 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[test]'
 
 The tests run offline; OSV is stubbed.
 
+## Support
+
+If sieve is useful to you, [buy me a coffee](https://buymeacoffee.com/iamc_tech). More field notes at [dev.to/iam-tech](https://dev.to/iam-tech).
+
 ## Licence
 
 AGPL-3.0, the same as warden. Copyright (C) 2026 casareanderson. See [LICENSE](LICENSE).
