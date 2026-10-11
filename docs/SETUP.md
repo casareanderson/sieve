@@ -27,7 +27,7 @@ The easy way is [pipx](https://pipx.pypa.io/), which keeps sieve in its own envi
 
 ```sh setup-check
 sudo apt-get update -qq && sudo apt-get install -y -qq pipx
-pipx install git+https://github.com/casareanderson/sieve
+pipx install sieve-scan
 export PATH="$HOME/.local/bin:$PATH"
 sieve --version
 ```

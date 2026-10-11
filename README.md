@@ -56,7 +56,7 @@ it honest that it does not miss the CVEs they catch.
 Full step-by-step setup, tested every week on a fresh machine: [docs/SETUP.md](docs/SETUP.md).
 
 ```
-pipx install git+https://github.com/casareanderson/sieve
+pipx install sieve-scan        # on PyPI as `sieve-scan`; the command is `sieve`. (or: pipx install git+https://github.com/casareanderson/sieve)
 ```
 
 Python 3.10 or newer. It also runs straight from a checkout: `python3 -m sieve host`.
