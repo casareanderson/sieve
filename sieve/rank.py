@@ -11,8 +11,10 @@ what you can and should act on first:
   4. everything else with a fix
   5. no fix yet
 
-Within a tier: higher EPSS first, then higher severity.
+Within a tier: code that is loaded in a running process first (then unknown, then not loaded), then higher EPSS,
+then higher severity. In-use never moves a finding into another tier: an unloaded KEV still outranks everything.
 """
+from .inuse import LOADED, ORDER
 from .osv import SEV_RANK
 
 EPSS_HOT = 0.1
@@ -33,11 +35,12 @@ def tier(f):
 def rank(findings):
     for f in findings:
         f["tier"] = tier(f)
-    return sorted(findings, key=lambda f: (f["tier"], -(f.get("epss") or 0), -SEV_RANK.get(f["severity"], 0),
+    return sorted(findings, key=lambda f: (f["tier"], ORDER.get(f.get("in_use"), 1), -(f.get("epss") or 0),
+                                           -SEV_RANK.get(f["severity"], 0),
                                            f["id"], f["package"], f["target"]))
 
 
-def apply_filters(findings, min_severity=None, kev_only=False, fixable_only=False):
+def apply_filters(findings, min_severity=None, kev_only=False, fixable_only=False, in_use_only=False):
     floor = SEV_RANK[min_severity.upper()] if min_severity else 0
     out = []
     for f in findings:
@@ -47,6 +50,8 @@ def apply_filters(findings, min_severity=None, kev_only=False, fixable_only=Fals
         if kev_only and not f["kev"]:
             continue
         if fixable_only and not f["fixed"]:
+            continue
+        if in_use_only and f.get("in_use") != LOADED:
             continue
         # a known-exploited finding is never hidden by its severity label
         if SEV_RANK.get(f["severity"], 0) < floor and not f["kev"]:
@@ -61,4 +66,6 @@ def summary(findings):
             "kev": sum(1 for f in findings if f["kev"]),
             "fixable": sum(1 for f in findings if f["fixed"]),
             "epss_hot_fixable": sum(1 for f in findings if f["fixed"] and (f.get("epss") or 0) >= EPSS_HOT),
-            "critical_fixable": sum(1 for f in findings if f["fixed"] and f["severity"] == "CRITICAL")}
+            "critical_fixable": sum(1 for f in findings if f["fixed"] and f["severity"] == "CRITICAL"),
+            "in_use": sum(1 for f in findings if f.get("in_use") == LOADED),
+            "restart_needed": sum(1 for f in findings if f.get("restart_needed"))}

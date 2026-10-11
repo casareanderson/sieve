@@ -72,6 +72,7 @@ Options (for `host`, `containers`, `all` and `path`):
 | `--min-severity low\|medium\|high\|critical` | hide findings below this severity (known-exploited findings are always shown) |
 | `--kev-only` | only findings in CISA's known-exploited list |
 | `--fixable-only` | only findings with a fixed version available |
+| `--in-use-only` | only findings whose code is loaded in a running process right now (see [In use](#in-use)) |
 | `--cache PATH` | advisory cache, default `~/.cache/sieve/sieve.db`; the KEV and EPSS files are kept next to it |
 | `--no-epss` | don't download or use EPSS scores |
 | `--kernel` | also check kernel packages (skipped by default, see Limits) |
@@ -165,6 +166,24 @@ ALERT  EPSS    SEVERITY  ID              PACKAGE         INSTALLED → FIXED    
 … 23 more (use --limit 0 to show all, or --json)
 
 35 findings, 2 actively exploited, 31 fixable (102 hidden by filters)
+```
+
+Is the vulnerable code actually running? The `IN USE` column says, per finding (an Ubuntu 24.04 container, as
+root, fixable findings only):
+
+```
+$ sudo sieve host --fixable-only --limit 4
+# host: ubuntu 24.04, 772 packages  (1 kernel packages skipped (use --kernel to include them))
+
+ALERT  EPSS  SEVERITY  IN USE  ID              PACKAGE       INSTALLED → FIXED  TARGET
+       0.3%  CRITICAL  ?       CVE-2026-63374  anyio         4.13.0 → 4.14.2    host
+       0.3%  HIGH      yes     CVE-2026-69247  cryptography  49.0.0 → 50.0.0    host
+       0.3%  HIGH      ?       CVE-2026-97689  urllib3       2.7.0 → 2.8.0      host
+       0.3%  MEDIUM    ?       CVE-2026-97688  urllib3       2.7.0 → 2.8.0      host
+… 4 more (use --limit 0 to show all, or --json)
+
+8 findings, 0 actively exploited, 8 fixable (1252 hidden by filters)
+1 in code running right now
 ```
 
 ### Scanning containers on another machine
@@ -290,9 +309,32 @@ of every binary and the full bodies ran a scan past 5 GB of memory.
 4. anything else with a fix
 5. no fix yet
 
-Within a tier, higher EPSS comes first, then higher severity. Severity is the vendor's rating where there is one
+Within a tier, code that is loaded in a running process comes first (then unknown, then not loaded), then higher
+EPSS, then higher severity. Being loaded never moves a finding into another tier: a known-exploited package nothing
+is running still outranks everything else. Severity is the vendor's rating where there is one
 (Ubuntu priority, Red Hat's Critical/Important/Moderate/Low, GitHub's reviewed level), otherwise the CVSS v3 base score; when an advisory has neither, sieve
 borrows the rating from the GitHub, CVE, Ubuntu or Debian record for the same CVE.
+
+<a id="in-use"></a>**In use.** Each finding says whether its package's code is loaded in a running process right
+now, read from `/proc/<pid>/maps` (every shared library and executable a process has mapped) and traced back to its
+package through dpkg's `*.list` files, apk's file list, the rpm database (read once, with the package list), or a
+wheel's `RECORD` for compiled Python extensions. Only
+executable mappings count; data files every process maps (`/etc/ld.so.cache`, locale archives) don't. Containers
+are read the same way, by the collector, for every process of every container of that image. Three answers:
+
+- **yes** (`loaded`): a file of that package is mapped by a running process.
+- **no** (`not loaded`): every process was read, the package ships native code (a shared library or an ELF
+  executable), and none of it is mapped.
+- **?** (`unknown`): anything else. Not every process could be read, or the package is scripts or pure Python (they
+  run inside the interpreter's mapping, so `maps` can't show them), or it's an npm, Go or Rust package.
+
+`↻` after `yes` (`restart_needed` in `--json`) means the running copy was replaced on disk by an upgrade: the fix is
+installed, but the process is still executing the old code until it's restarted.
+
+Without root only your own processes can be read. sieve says how many it read ("read 1 of 72 processes") and then
+never answers **no**, only **yes** or **?**. With `--root` (scanning a filesystem mounted from elsewhere) the
+check is skipped, because this machine's processes aren't that filesystem's. It's a snapshot: something that only
+runs from cron may be **no** when you look.
 
 **Caching.** Advisories are cached in SQLite and refetched only when OSV's `modified` stamp changes. KEV and EPSS
 are downloaded at most every 20 hours; if a download fails, the last copy is used and a warning is printed.
@@ -327,6 +369,8 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
   would flag every Tumbleweed with 2014's Shellshock. For openSUSE's "… on GA media" records sieve trusts the
   build named in the title instead.
 - **Go binaries built before Go 1.18** store their build info differently and are counted but not read.
+- **In use is a snapshot**, and only native code is visible: pure-Python, npm, Go and Rust packages are always
+  "unknown". See [In use](#in-use).
 - Ubuntu fixes that only exist in Ubuntu Pro (ESM) are shown as "fix needs Ubuntu Pro (ESM)", not as fixable.
 - The advisory data comes from OSV.dev, KEV from CISA and EPSS from FIRST, so scanning needs outbound HTTPS to
   `api.osv.dev`, `secdb.alpinelinux.org`, `www.cisa.gov` and `epss.empiricalsecurity.com`. Package names and

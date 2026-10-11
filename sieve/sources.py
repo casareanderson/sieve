@@ -1,5 +1,6 @@
 """Where package lists come from: the local machine, or the running containers on it."""
 import glob
+import json
 import os
 import re
 import shutil
@@ -7,7 +8,7 @@ import subprocess
 import sys
 import tarfile
 
-from . import osv
+from . import collect, osv
 from .collect import rpm_packages          # standard library only, shared with the standalone collector
 
 COLLECTOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "collect.py")
@@ -28,10 +29,14 @@ class Target:
         self.pkgs = []                  # match() input
         self.notes = []
         self.status = "ok"
+        self.inuse = None               # collect.inuse_report() for this target, if it could be read
 
     def as_dict(self):
-        return {"name": self.name, "kind": self.kind, "os": self.os, "packages": self.packages,
-                "status": self.status, "notes": self.notes}
+        d = {"name": self.name, "kind": self.kind, "os": self.os, "packages": self.packages,
+             "status": self.status, "notes": self.notes}
+        if self.inuse is not None:
+            d["in_use"] = {"processes_read": self.inuse["seen"], "processes": self.inuse["total"]}
+        return d
 
 
 def os_identity(files):
@@ -87,10 +92,10 @@ def rpm_owned(path):
     return path.startswith(("/usr/lib/python", "/usr/lib64/python", "/usr/lib/node_modules/"))
 
 
-def rpm_list(root="/"):
+def rpm_list(root="/", files=None):
     """→ (rpm list text or "", error or None). Reads the database directly; with an unreadable one on the live
     machine, falls back to the rpm binary when there is one."""
-    _fmt, rows, err = rpm_packages(root)
+    _fmt, rows, err = rpm_packages(root, files)
     if err and os.path.abspath(root) == "/" and shutil.which("rpm"):
         try:
             out = subprocess.run(["rpm", "-qa", "--qf", "%{NAME}\\t%{EPOCH}\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\t"
@@ -162,8 +167,9 @@ def host(root="/", kernel=False):
         txt = _read(os.path.join(root, rel))
         if txt is not None:
             files[rel] = txt
+    rpm_files = {}                              # {path: package}, filled by the same rpmdb read, for in-use
     rpm, rpm_err = ("", None) if files.get("var/lib/dpkg/status") or files.get("lib/apk/db/installed") \
-        else rpm_list(root)
+        else rpm_list(root, rpm_files)
     if rpm:
         files["rpm"] = rpm
     eco, label, entries = os_identity(files)
@@ -191,6 +197,15 @@ def host(root="/", kernel=False):
     pkgs += [("npm", n, v, n, v) for n, v, _ in npm]
     t.pkgs = sorted(set(pkgs))
     t.packages = len(entries) + len(py) + len(npm)
+    # /proc here is this process's own view: with --root it belongs to another filesystem (sieve's own container),
+    # whose libraries would be matched against the host's package lists and reported as loaded when they aren't
+    if os.path.realpath(root) != "/":
+        t.notes.append("in-use not checked with --root (run sieve on the machine itself for that)")
+    else:
+        try:
+            t.inuse = collect.inuse_report(root, collect.host_pids(), rpm_files=rpm_files)
+        except Exception as e:  # noqa: BLE001 — in-use is extra information, never a reason to fail the scan
+            t.notes.append(f"in-use check failed: {type(e).__name__}: {e}")
     return t
 
 
@@ -242,6 +257,11 @@ def image_target(name, files, kernel=False):
             pkgs += [("Go", m, ver, m, ver) for m, ver in deps]
         elif kind == "rust":
             pkgs += [("crates.io", c, ver, c, ver) for c, ver in osv.parse_rustdeps(body)]
+        elif k == "inuse":
+            try:
+                t.inuse = json.loads(v)
+            except ValueError:
+                t.notes.append("in-use data from the collector could not be read")
     if unread:
         t.notes.append(f"{unread} Go binaries older than Go 1.18 not read")
     t.os = label if (entries or eco) else "no OS packages"
