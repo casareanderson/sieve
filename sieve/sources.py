@@ -1,22 +1,17 @@
-"""Where package lists come from: the local machine, or the running containers on it."""
-import glob
+"""Where package lists come from: the local machine, the running containers on it, or another machine over ssh."""
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 import tarfile
 
 from . import collect, osv
-from .collect import rpm_packages          # standard library only, shared with the standalone collector
+# standard library only, shared with the standalone collector: local and remote host scans run the same code
+from .collect import (HOST_FILES, NPM_DIRS, NPMRC, PY_DIRS, npm_global, npm_owned as _npm_owned,  # noqa: F401
+                      os_owned as _os_owned, python_dists, rpm_list, rpm_packages)
 
 COLLECTOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "collect.py")
-NPM_DIRS = ["usr/lib/node_modules", "usr/local/lib/node_modules"]
-NPMRC = ["etc/npmrc", "usr/etc/npmrc", "usr/local/etc/npmrc", "root/.npmrc"]
-PY_DIRS = ["usr/lib/python3*/site-packages", "usr/lib/python3*/dist-packages", "usr/lib/python3/dist-packages",
-           "usr/lib64/python3*/site-packages", "usr/local/lib/python3*/site-packages",
-           "usr/local/lib/python3*/dist-packages"]
 
 
 class Target:
@@ -68,102 +63,22 @@ def _read(path):
         return None
 
 
-def _os_owned(root, apk_db):
-    """Directories that the OS package manager installed. Python packages there come from a dpkg/apk package and
-    are already covered by the distro's advisories (with its backported fixes); asking PyPI about them as well would
-    report fixes the distro has already applied."""
-    owned = set()
-    for lst in glob.glob(os.path.join(root, "var/lib/dpkg/info/*.list")):
-        for line in (_read(lst) or "").splitlines():
-            if line.endswith((".dist-info", ".egg-info")):
-                owned.add(line.strip())
-    folder = ""
-    for line in (apk_db or "").splitlines():
-        if line.startswith("F:"):
-            folder = "/" + line[2:]
-            if folder.endswith((".dist-info", ".egg-info")):
-                owned.add(folder)
-    return owned
-
-
 def rpm_owned(path):
     """On rpm distros pip and `npm -g` install into /usr/local (Fedora 27+, EL8+); a dist-info under /usr/lib*/python3*
     or a package under /usr/lib/node_modules came with an rpm, whose advisories already cover it."""
     return path.startswith(("/usr/lib/python", "/usr/lib64/python", "/usr/lib/node_modules/"))
 
 
-def rpm_list(root="/", files=None):
-    """→ (rpm list text or "", error or None). Reads the database directly; with an unreadable one on the live
-    machine, falls back to the rpm binary when there is one."""
-    _fmt, rows, err = rpm_packages(root, files)
-    if err and os.path.abspath(root) == "/" and shutil.which("rpm"):
-        try:
-            out = subprocess.run(["rpm", "-qa", "--qf", "%{NAME}\\t%{EPOCH}\\t%{VERSION}\\t%{RELEASE}\\t%{ARCH}\\t"
-                                  "%{SOURCERPM}\\n"], capture_output=True, text=True, timeout=300).stdout
-            rows = sorted({l.replace("(none)", "") for l in out.splitlines() if l and not l.startswith("gpg-pubkey\t")})
-            if rows:
-                return "\n".join(rows), None
-        except (OSError, subprocess.SubprocessError):
-            pass
-    return "\n".join(rows), err
-
-
-def npm_global(root="/"):
-    """Globally installed npm packages → [(name, version, path)]: the usual global prefixes plus any `prefix=` set in
-    an npmrc. Read straight from package.json, so node doesn't need to be installed (or trusted) to scan it."""
-    dirs = list(NPM_DIRS)
-    for rc in NPMRC:
-        m = re.search(r"^\s*prefix\s*=\s*(\S+)", _read(os.path.join(root, rc)) or "", re.M)
-        if m and m.group(1).startswith("/"):
-            dirs.append(m.group(1).lstrip("/") + "/lib/node_modules")
-    from .projects import node_modules
-    out, seen = [], set()
-    for d in dirs:
-        full = os.path.join(root, d)
-        real = os.path.realpath(full)
-        if real in seen or not os.path.isdir(full):
-            continue
-        seen.add(real)
-        out += [(n, v, "/" + os.path.relpath(p, root)) for n, v, p in node_modules(full, with_path=True)]
-    return out
-
-
-def _npm_owned(root):
-    """Top-level global npm packages that dpkg installed (Debian's `npm` package ships some): its advisories cover them."""
-    owned = set()
-    for lst in glob.glob(os.path.join(root, "var/lib/dpkg/info/*.list")):
-        for line in (_read(lst) or "").splitlines():
-            m = re.match(r"^(.*/node_modules/(?:@[^/]+/)?[^/@]+)$", line.strip())
-            if m and any(m.group(1).startswith("/" + d + "/") for d in NPM_DIRS):
-                owned.add(m.group(1))
-    return owned
-
-
 def python_packages(root="/"):
     """[(name, version, path)] from dist-info / egg-info under the usual system site directories."""
-    out, seen = [], set()
-    for pat in PY_DIRS:
-        for d in glob.glob(os.path.join(root, pat)):
-            for meta in glob.glob(os.path.join(d, "*.dist-info", "METADATA")) + \
-                    glob.glob(os.path.join(d, "*.egg-info", "PKG-INFO")) + glob.glob(os.path.join(d, "*.egg-info")):
-                path = os.path.dirname(meta) if meta.endswith(("METADATA", "PKG-INFO")) else meta
-                real = os.path.realpath(path)
-                if real in seen or (os.path.isdir(meta)):
-                    continue
-                seen.add(real)
-                nv = osv.parse_pymeta((_read(meta) or "")[:4096])
-                if nv:
-                    out.append((nv[0], nv[1], "/" + os.path.relpath(path, root)))
-    return out
+    return python_dists(root)
 
 
 def host(root="/", kernel=False):
     """The local machine: OS packages from dpkg/apk/rpm, Python packages pip installed outside the OS, and global
     npm packages."""
-    t = Target("host", "host")
     files = {}
-    for rel in ("etc/os-release", "usr/lib/os-release", "etc/alpine-release", "var/lib/dpkg/status",
-                "lib/apk/db/installed"):
+    for rel in HOST_FILES:
         txt = _read(os.path.join(root, rel))
         if txt is not None:
             files[rel] = txt
@@ -172,6 +87,26 @@ def host(root="/", kernel=False):
         else rpm_list(root, rpm_files)
     if rpm:
         files["rpm"] = rpm
+    t = host_target("host", files, python_packages(root), _os_owned(root, files.get("lib/apk/db/installed")),
+                    npm_global(root), _npm_owned(root), kernel, rpm_err)
+    # /proc here is this process's own view: with --root it belongs to another filesystem (sieve's own container),
+    # whose libraries would be matched against the host's package lists and reported as loaded when they aren't.
+    # (`sieve remote` runs the same check on the remote machine: collect.host_main.)
+    if os.path.realpath(root) != "/":
+        t.notes.append("in-use not checked with --root (run sieve on the machine itself for that)")
+    else:
+        try:
+            t.inuse = collect.inuse_report(root, collect.host_pids(), rpm_files=rpm_files)
+        except Exception as e:  # noqa: BLE001 — in-use is extra information, never a reason to fail the scan
+            t.notes.append(f"in-use check failed: {type(e).__name__}: {e}")
+    return t
+
+
+def host_target(name, files, py, owned, npm, npm_owned, kernel=False, rpm_err=None):
+    """files {relpath: text, "rpm": rpm list}, py / npm [(name, version, path)], owned / npm_owned {path} → Target.
+    Shared by `host` and `remote`, so both report the same thing for the same machine (an unreadable rpm database is
+    partial, never empty, either way)."""
+    t = Target(name, "host")
     eco, label, entries = os_identity(files)
     t.os = label
     entries, skipped = split_kernel(entries, kernel)
@@ -186,26 +121,16 @@ def host(root="/", kernel=False):
     elif not entries and not rpm_err:
         t.notes.append("no dpkg, apk or rpm package database found")
     pkgs = osv.os_packages(eco, entries) if eco else []
-    owned = _os_owned(root, files.get("lib/apk/db/installed"))
-    py = [p for p in python_packages(root) if p[2] not in owned and not (rpm and rpm_owned(p[2]))]
+    rpm = files.get("rpm")
+    py = [p for p in py if p[2] not in owned and not (rpm and rpm_owned(p[2]))]
     pkgs += [("PyPI", n, v, n, v) for n, v, _ in py]
-    npm_owned = _npm_owned(root)
-    npm = [p for p in npm_global(root) if p[2] not in npm_owned and not any(p[2].startswith(o + "/") for o in npm_owned)
+    npm = [p for p in npm if p[2] not in npm_owned and not any(p[2].startswith(o + "/") for o in npm_owned)
            and not (rpm and rpm_owned(p[2]))]
     if npm:
         t.notes.append(f"{len(npm)} global npm packages")
     pkgs += [("npm", n, v, n, v) for n, v, _ in npm]
     t.pkgs = sorted(set(pkgs))
     t.packages = len(entries) + len(py) + len(npm)
-    # /proc here is this process's own view: with --root it belongs to another filesystem (sieve's own container),
-    # whose libraries would be matched against the host's package lists and reported as loaded when they aren't
-    if os.path.realpath(root) != "/":
-        t.notes.append("in-use not checked with --root (run sieve on the machine itself for that)")
-    else:
-        try:
-            t.inuse = collect.inuse_report(root, collect.host_pids(), rpm_files=rpm_files)
-        except Exception as e:  # noqa: BLE001 — in-use is extra information, never a reason to fail the scan
-            t.notes.append(f"in-use check failed: {type(e).__name__}: {e}")
     return t
 
 
@@ -312,3 +237,78 @@ def run_collector():
 def collector_source():
     with open(COLLECTOR, encoding="utf-8") as f:
         return f.read()
+
+
+# ── another machine, over ssh ────────────────────────────────────────────────
+def read_host(stream, name, kernel=False):
+    """`collect.py host`'s tar stream → the remote machine's host Target, in-use report included."""
+    files, py, npm, owned, npm_own, rpm_err, inuse, notes = {}, [], [], set(), set(), None, None, []
+    with tarfile.open(fileobj=stream, mode="r|gz") as tf:
+        for m in tf:
+            if not m.isfile():
+                continue
+            data = tf.extractfile(m).read().decode("utf-8", "replace")
+            if m.name == "os/rpm_packages":
+                if data.startswith("#error"):
+                    rpm_err = data.splitlines()[0][7:]
+                elif data.strip():
+                    files["rpm"] = data
+            elif m.name.startswith("os/") and m.name[3:] in NAMED:
+                files[NAMED[m.name[3:]]] = data
+            elif m.name == "owned":
+                owned = {line for line in data.splitlines() if line}
+            elif m.name == "inuse":
+                try:
+                    inuse = json.loads(data)
+                except ValueError:
+                    notes.append("in-use data from the collector could not be read")
+            elif m.name == "inuse_note":
+                notes.append(data)
+            elif m.name == "npm_owned":
+                npm_own = {line for line in data.splitlines() if line}
+            elif m.name.startswith(("py/", "npm/")):
+                parts = data.split("\n")
+                if len(parts) == 3 and parts[1] and parts[2]:
+                    (py if m.name.startswith("py/") else npm).append((parts[1], parts[2], parts[0]))
+    t = host_target(name, files, py, owned, npm, npm_own, kernel, rpm_err)
+    t.inuse = inuse                             # read on the remote machine, where its processes are
+    t.notes += notes
+    return t
+
+
+def ssh_command(dest, port=None, identity=None, opts=(), sudo=False, mode=""):
+    """argv that runs a script fed on stdin with the remote python3. BatchMode: a key that needs a password, or an
+    unknown host key, fails at once instead of hanging on a prompt. -I keeps the remote's cwd and environment out
+    of the script's imports. sudo -n never asks for a password (and sieve never holds one)."""
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
+    if port:
+        cmd += ["-p", str(port)]
+    if identity:
+        cmd += ["-i", identity]
+    for o in opts:
+        cmd += ["-o", o]
+    return cmd + ["--", dest, ("sudo -n " if sudo else "") + "python3 -I -" + (f" {mode}" if mode else "")]
+
+
+def run_remote(cmd, script):
+    """Start `cmd` with `script` on its stdin → (Popen, stdout stream). Nothing is written on the remote machine:
+    the script arrives on stdin and its tar comes back on stdout."""
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p.stdin.write(script.encode())
+    p.stdin.close()
+    return p, p.stdout
+
+
+def ssh_error(rc, stderr):
+    """A failed ssh run → one line that says what to do about it."""
+    text = stderr.decode("utf-8", "replace")
+    tail = text.strip().splitlines()[-1:] or [""]
+    msg = f"exited {rc}: {tail[0][:200]}"
+    if "a password is required" in text:
+        msg += " (--sudo needs passwordless sudo for python3 on the remote machine)"
+    elif rc == 127 or "python3: not found" in text or "python3: command not found" in text:
+        msg += " (the remote machine needs python3)"
+    elif rc == 255:
+        msg += " (ssh could not connect or authenticate; sieve uses BatchMode, so it needs key auth and a known host key)"
+    return msg
+

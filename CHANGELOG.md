@@ -4,6 +4,15 @@
 
 ### Scanning
 
+- `sieve remote user@host`: scan another machine over ssh, covering what `sieve all` would there: dpkg, apk or rpm,
+  Python outside the OS, global npm, and its running containers. Only python3 is needed on the other side: the
+  standard-library collector is piped to `python3 -I -` (a new `host` mode for the machine itself), nothing is
+  copied or written there, and rpm databases are read there so only the package list comes back. Local and remote
+  host scans share one code path, so an unreadable rpm database is partial, never empty, either way. The in-use
+  check runs on the remote machine (it reads that machine's `/proc`), with the same rules as a local scan. `--sudo`
+  (`sudo -n`, never a password prompt), `--no-containers`, `--port`, `-i`, `--ssh-opt`; ssh runs in BatchMode with a
+  connect timeout, and a failed run says why (no key auth, no python3, sudo wants a password). `--json`, `--sarif`
+  and `--in-use-only` work with it.
 - RPM distributions: AlmaLinux, Rocky Linux, RHEL (including UBI images) and openSUSE Leap and Tumbleweed, for
   host and container scans. The rpm database is read directly (SQLite, ndb and BerkeleyDB), so no `rpm` binary is
   needed; an unreadable database is reported, never treated as empty. On a live host with an unreadable database
