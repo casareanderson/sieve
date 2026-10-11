@@ -57,7 +57,7 @@ docker run --rm ghcr.io/casareanderson/sieve collector | sudo python3 - \
 ## Usage
 
 ```
-sieve host          # this machine: dpkg or apk packages, plus Python packages pip installed outside the OS
+sieve host          # this machine: dpkg, apk or rpm packages, plus Python packages pip installed outside the OS
 sieve containers    # every running Docker container on this machine (needs root)
 sieve all           # both
 ```
@@ -222,16 +222,21 @@ is no fix), `severity`, `kev`, `epss`, `epss_percentile`, `tier`, `status`, `tar
 
 ![How sieve works: package lists, OSV.dev, KEV and EPSS, ranked table](docs/sieve-how.png)
 
-**Package lists.** For the host: `/var/lib/dpkg/status` or `/lib/apk/db/installed`, `/etc/os-release`, and every
-`*.dist-info`/`*.egg-info` under the system Python site directories. Python packages that dpkg or apk installed
-are left to the distro's advisories, which know about backported fixes. For containers: the collector finds each
+**Package lists.** For the host: `/var/lib/dpkg/status`, `/lib/apk/db/installed` or the rpm database,
+`/etc/os-release`, and every `*.dist-info`/`*.egg-info` under the system Python site directories. Python packages
+that dpkg, apk or rpm installed are left to the distro's advisories, which know about backported fixes. The rpm
+database is read directly, with no `rpm` binary: SQLite (EL9, Fedora), ndb (openSUSE) and the older BerkeleyDB
+hash file (EL7/EL8). For containers: the collector finds each
 image with a running container and reads its real root filesystem through `/proc/<pid>/root`, skipping mounted
 volumes. From each image it takes the OS package database, Python and npm package metadata, the build info
 embedded in Go binaries, and the dependency list Rust binaries carry when built with `cargo-auditable`.
 
 **Matching.** Debian and Alpine packages are queried by source package and reported by binary package, so you
-see what to upgrade. Version comparisons follow each ecosystem's own rules (dpkg, apk, and semver/PEP 440 for
-language packages). Debian records also list the fix in unstable, so sieve only uses fixes for your exact
+see what to upgrade. RPM feeds disagree on which name they index (Rocky: source, AlmaLinux and Red Hat: binary),
+so rpm packages are asked about under both; RHEL is asked under BaseOS and AppStream. RPM distros publish errata
+(RHSA, ALSA, RLSA, SUSE-SU) rather than per-CVE records, so each erratum is expanded into the CVEs it fixes and
+keeps the distro's own rating. Version comparisons follow each ecosystem's own rules (dpkg, apk, rpm's
+epoch:version-release with `~` and `^`, and semver/PEP 440 for language packages). Debian records also list the fix in unstable, so sieve only uses fixes for your exact
 release. Alpine's own secdb is merged in because OSV's Alpine import can lag behind it. Advisory bodies are cut
 down to what matching needs before they're cached, because Ubuntu and Debian records list every affected version
 of every binary and the full bodies ran a scan past 5 GB of memory.
@@ -245,7 +250,7 @@ of every binary and the full bodies ran a scan past 5 GB of memory.
 5. no fix yet
 
 Within a tier, higher EPSS comes first, then higher severity. Severity is the vendor's rating where there is one
-(Ubuntu priority, GitHub's reviewed level), otherwise the CVSS v3 base score; when an advisory has neither, sieve
+(Ubuntu priority, Red Hat's Critical/Important/Moderate/Low, GitHub's reviewed level), otherwise the CVSS v3 base score; when an advisory has neither, sieve
 borrows the rating from the GitHub, CVE, Ubuntu or Debian record for the same CVE.
 
 **Caching.** Advisories are cached in SQLite and refetched only when OSV's `modified` stamp changes. KEV and EPSS
@@ -263,8 +268,23 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
   Proxmox's `proxmox-kernel-*` aren't in any distro feed, so they're never covered.
 - **Containers need root.** Container roots under `/proc/<pid>/root` are root-only. Only images with a running
   container are scanned.
-- **Supported OS feeds:** Debian, Ubuntu (and distributions that declare `ID_LIKE=ubuntu`) and Alpine. Others
-  (Fedora, RHEL, Arch, ...) get their Python and container language packages checked, not their OS packages.
+- **Supported OS feeds:**
+
+  | OS | OSV ecosystem | Package database |
+  |---|---|---|
+  | Debian, Ubuntu (and `ID_LIKE=ubuntu` derivatives) | `Debian:13`, `Ubuntu:24.04:LTS` | dpkg |
+  | Alpine | `Alpine:v3.20` + Alpine secdb | apk |
+  | AlmaLinux 8, 9 | `AlmaLinux:9` | rpm (BerkeleyDB on 8, SQLite on 9) |
+  | Rocky Linux 8, 9 | `Rocky Linux:9` | rpm |
+  | RHEL and UBI images | `Red Hat:enterprise_linux:9::baseos` / `::appstream` | rpm |
+  | openSUSE Leap, Tumbleweed | `openSUSE:Leap 15.6`, `openSUSE:Tumbleweed` | rpm (ndb) |
+
+  OSV has no feed for Fedora, CentOS Stream, Oracle Linux, Amazon Linux or Arch, and SUSE Linux Enterprise files
+  its fixes per module, which a host can't name reliably. Those get their Python and container language packages
+  checked, not their OS packages, and the scan says so.
+- **Some openSUSE records carry a wrong fixed version.** openSUSE-SU-2024:10106-1 says bash is fixed in 7.0, which
+  would flag every Tumbleweed with 2014's Shellshock. For openSUSE's "… on GA media" records sieve trusts the
+  build named in the title instead.
 - **Go binaries built before Go 1.18** store their build info differently and are counted but not read.
 - Ubuntu fixes that only exist in Ubuntu Pro (ESM) are shown as "fix needs Ubuntu Pro (ESM)", not as fixable.
 - The advisory data comes from OSV.dev, KEV from CISA and EPSS from FIRST, so scanning needs outbound HTTPS to
