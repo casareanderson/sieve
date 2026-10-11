@@ -24,4 +24,5 @@ def test_filters():
 
 def test_summary():
     s = rank.summary([f("a", kev=True), f("b", fixed=""), f("c", "CRITICAL"), f("d", epss=0.5)])
-    assert s == {"findings": 4, "malicious": 0, "kev": 1, "fixable": 3, "epss_hot_fixable": 1, "critical_fixable": 1}
+    assert s == {"findings": 4, "malicious": 0, "kev": 1, "fixable": 3, "epss_hot_fixable": 1, "critical_fixable": 1,
+                 "in_use": 0, "restart_needed": 0}

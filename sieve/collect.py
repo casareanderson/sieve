@@ -17,6 +17,8 @@ writes a gzipped tar to stdout holding only package metadata. It installs nothin
                    (name and version are pulled out here: shipping whole package.json files took one scan to 1.1 GB)
   <n>/go/<i>       256 KB from the Go build-info magic of each Go executable
   <n>/rust/<i>     the .dep-v0 section of each Rust executable built with cargo-auditable
+  <n>/inuse        JSON: which of the image's packages have code mapped into a running process of ANY container
+                   of that image (see inuse_report)
   ERRORS           one line per image that could not be read
 """
 import io
@@ -135,8 +137,23 @@ def in_root(root, rel):
     return os.path.join(root, *done)
 
 
-def rpm_header(blob):
-    """Header blob (index count, data length, 16-byte index entries, data store) → {name, version, …} or None."""
+RPM_FILE_TAGS = (1116, 1117, 1118, 1027)                     # DIRINDEXES, BASENAMES, DIRNAMES, OLDFILENAMES
+
+
+def _rpm_strings(store, off, cnt):
+    out = []
+    for _ in range(cnt):
+        end = store.find(b"\0", off)
+        if end < 0:
+            break
+        out.append(store[off:end].decode("utf-8", "replace"))
+        off = end + 1
+    return out
+
+
+def rpm_header(blob, files=False):
+    """Header blob (index count, data length, 16-byte index entries, data store) → {name, version, …} or None.
+    files=True also returns the package's file paths under "files" (for the in-use check), from the same parse."""
     try:
         il, dl = struct.unpack_from(">II", blob, 0)
     except struct.error:
@@ -144,9 +161,12 @@ def rpm_header(blob):
     start = 8 + 16 * il
     if il > 200000 or start + dl > len(blob):
         return None
-    store, out = blob[start:start + dl], {}
+    store, out, fl = blob[start:start + dl], {}, {}
     for k in range(il):
-        tag, typ, off, _cnt = struct.unpack_from(">IIII", blob, 8 + 16 * k)
+        tag, typ, off, cnt = struct.unpack_from(">IIII", blob, 8 + 16 * k)
+        if files and tag in RPM_FILE_TAGS and off < len(store) and cnt < 1000000:
+            fl[tag] = list(struct.unpack_from(f">{cnt}i", store, off)) if typ == 4 and off + 4 * cnt <= len(store) \
+                else _rpm_strings(store, off, cnt) if typ == 8 else None
         if tag not in RPM_TAGS or off >= len(store):
             continue
         if typ in (6, 8, 9):                                  # STRING, STRING_ARRAY, I18NSTRING: first string
@@ -154,6 +174,10 @@ def rpm_header(blob):
             out[RPM_TAGS[tag]] = store[off:end if end >= 0 else len(store)].decode("utf-8", "replace")
         elif typ == 4 and off + 4 <= len(store):              # INT32
             out[RPM_TAGS[tag]] = str(struct.unpack_from(">i", store, off)[0])
+    if files:
+        idx, base, dirs = fl.get(1116), fl.get(1117), fl.get(1118)
+        out["files"] = [dirs[i] + b for i, b in zip(idx, base) if 0 <= i < len(dirs)] \
+            if idx and base and dirs and len(idx) == len(base) else list(fl.get(1027) or [])
     return out if out.get("name") and out.get("version") else None
 
 
@@ -241,9 +265,10 @@ def _rpm_bdb(data):
     return out
 
 
-def rpm_packages(root="/"):
+def rpm_packages(root="/", files=None):
     """→ (format, ["name\\tepoch\\tversion\\trelease\\tarch\\tsourcerpm", …], error). ([], None) when there is no
-    rpm database at all; an unreadable one is an error, never an empty list."""
+    rpm database at all; an unreadable one is an error, never an empty list. Pass a dict as `files` to also get
+    {path: package name} for the in-use check, from the same read."""
     for rel in RPM_DBS:
         path = in_root(root, rel)
         if not path or not os.path.isfile(path) or os.path.getsize(path) == 0:
@@ -259,7 +284,9 @@ def rpm_packages(root="/"):
             return "?", [], f"unsupported or unreadable rpm database {rel}: {type(e).__name__}: {e}"
         rows = set()
         for b in blobs:
-            h = rpm_header(b)
+            h = rpm_header(b, files=files is not None)
+            if h and files is not None and h["name"] != "gpg-pubkey":
+                files.update(dict.fromkeys(h.pop("files"), h["name"]))
             if h and h["name"] != "gpg-pubkey":
                 rows.add("\t".join(h.get(k, "") for k in ("name", "epoch", "version", "release", "arch", "sourcerpm")))
         if blobs and not rows:
@@ -308,6 +335,194 @@ def walk_root(root, skip, add, p):
                 add(f"{p}{kind}/{k}", (rel + "/" + fn + "\n").encode() + data)
 
 
+# ── in use: which installed packages have code mapped into a running process ─────────────────────────────────────
+# Read from /proc/<pid>/maps: every shared library, executable and mmapped file a process has open. A path is mapped
+# back to its package through the package manager's own file lists (dpkg *.list, apk F:/R:; rpm to come) and, for
+# compiled Python extensions, the wheel's RECORD. "(deleted)" means the file was replaced on disk (an upgrade) while
+# the process kept running the old copy: in use, and it needs a restart.
+USRMERGE = ("/bin/", "/sbin/", "/lib/", "/lib32/", "/lib64/", "/libx32/")
+BIN_DIRS = {"/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/libexec", "/usr/local/bin", "/usr/local/sbin"}
+SHARED = re.compile(r"\.so(\.[0-9][^/]*)?$")
+SITE = ("/site-packages/", "/dist-packages/")
+
+
+def _twins(p):
+    """A listed path and its usrmerge twin: dpkg lists /lib/x/libssl.so.3, maps shows /usr/lib/x/libssl.so.3."""
+    if p.startswith(USRMERGE):
+        return p, "/usr" + p
+    if p.startswith("/usr/") and p[4:].startswith(USRMERGE):
+        return p, p[4:]
+    return (p,)
+
+
+def proc_pids(proc="/proc"):
+    try:
+        return [d for d in os.listdir(proc) if d.isdigit()]
+    except OSError:
+        return []
+
+
+def host_pids(proc="/proc"):
+    """Processes in this machine's own mount namespace (container processes see a different filesystem, so their
+    paths would be matched against the wrong package lists). Without root pid 1's namespace can't be read; then
+    every process is a candidate and the ones that can't be read are counted as not seen."""
+    try:
+        ns = os.readlink(f"{proc}/1/ns/mnt")
+    except OSError:
+        return proc_pids(proc)
+    out = []
+    for pid in proc_pids(proc):
+        try:
+            if os.readlink(f"{proc}/{pid}/ns/mnt") == ns:
+                out.append(pid)
+        except OSError:
+            out.append(pid)
+    return out
+
+
+def container_pids(proc="/proc"):
+    """{64-hex container id: [pid]} from each process's cgroup path (docker-<id>.scope, /docker/<id>, ...)."""
+    hexid = re.compile(r"[0-9a-f]{64}")
+    out = {}
+    for pid in proc_pids(proc):
+        try:
+            with open(f"{proc}/{pid}/cgroup") as f:
+                m = hexid.search(f.read())
+        except OSError:
+            continue
+        if m:
+            out.setdefault(m.group(0), []).append(pid)
+    return out
+
+
+def mapped(pids, proc="/proc"):
+    """→ ({path: replaced_on_disk}, processes read, processes there). Only EXECUTABLE mappings count: every process
+    maps data files too (/etc/ld.so.cache, locale archives) and those would make their packages look "in use". Kernel
+    threads (empty cmdline) map nothing and are not counted; a process whose maps can't be read (not root, or it
+    exited) counts as there but not read."""
+    paths, seen, total = {}, 0, 0
+    for pid in pids:
+        try:
+            with open(f"{proc}/{pid}/cmdline", "rb") as f:
+                if not f.read(1):
+                    continue
+            total += 1
+            with open(f"{proc}/{pid}/maps", encoding="utf-8", errors="replace") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            continue
+        seen += 1
+        for line in lines:
+            parts = line.split(None, 5)
+            if len(parts) < 6 or not parts[5].startswith("/") or "x" not in parts[1]:
+                continue
+            path, gone = parts[5], parts[5].endswith(" (deleted)")
+            if gone:
+                path = path[:-len(" (deleted)")]
+            paths[path] = paths.get(path, False) or gone
+    return paths, seen, total
+
+
+def _is_elf(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"\x7fELF"
+    except OSError:
+        return False
+
+
+def _read_text(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def owners(root, want, rpm_files=None):
+    """Who owns each mapped path. → ({path: "os:<pkg>" | "py:<dist>"}, {OS packages that ship native code}).
+    A package "ships native code" when it has a shared library or an ELF executable: only for those can "nothing is
+    mapped" honestly mean "not loaded" (a script or a pure-Python module runs inside an interpreter's mapping)."""
+    own, native = {}, set()
+
+    def add(pkg, path):
+        for q in _twins(path):
+            if q in want:
+                own.setdefault(q, "os:" + pkg)
+        if pkg not in native and (SHARED.search(path) or
+                                  (os.path.dirname(path) in BIN_DIRS and _is_elf(in_root(root, path) or ""))):
+            native.add(pkg)
+    info = os.path.join(root, "var/lib/dpkg/info")
+    try:
+        lists = [f for f in os.listdir(info) if f.endswith(".list")]
+    except OSError:
+        lists = []
+    for fn in lists:
+        pkg = fn[:-5].split(":")[0]
+        for line in _read_text(os.path.join(info, fn)).splitlines():
+            if line.startswith("/") and line != "/.":
+                add(pkg, line.rstrip("/"))
+    pkg = folder = ""
+    for line in _read_text(os.path.join(root, "lib/apk/db/installed")).splitlines():
+        if line.startswith("P:"):
+            pkg = line[2:]
+        elif line.startswith("F:"):
+            folder = "/" + line[2:]
+        elif line.startswith("R:") and pkg:
+            add(pkg, f"{folder}/{line[2:]}")
+    for path, pkg in (rpm_files or {}).items():                # read with the package list (rpm_packages files=)
+        add(pkg, path)
+    sites = {}
+    for path in want:
+        if path in own:
+            continue
+        for mark in SITE:
+            i = path.find(mark)
+            if i < 0:
+                continue
+            site = path[:i + len(mark) - 1]
+            if site not in sites:
+                sites[site] = _record_index(root, site)
+            dist = sites[site].get(os.path.normpath(path))
+            if dist:
+                own[path] = "py:" + dist
+            break
+    return own, native
+
+
+def _record_index(root, site):
+    """{absolute file path: distribution name} from every *.dist-info/RECORD in one site directory."""
+    out = {}
+    base = root.rstrip("/") + site
+    try:
+        infos = [d for d in os.listdir(base) if d.endswith(".dist-info")]
+    except OSError:
+        return out
+    for d in infos:
+        meta = pymeta(head(os.path.join(base, d, "METADATA"), 4096))
+        if not meta:
+            continue
+        name = meta.decode().split("\n")[0]
+        for line in _read_text(os.path.join(base, d, "RECORD")).splitlines():
+            rel = line.rsplit(",", 2)[0] if line.count(",") >= 2 else line
+            if rel:
+                out[os.path.normpath(os.path.join(site, rel))] = name
+    return out
+
+
+def inuse_report(root, pids, proc="/proc", rpm_files=None):
+    """Packages with code mapped into any of `pids` right now. Paths in /proc/<pid>/maps are the process's own view of
+    its filesystem, so `root` must be that filesystem (the host's /, or a container's /proc/<pid>/root)."""
+    paths, seen, total = mapped(pids, proc)
+    own, native = owners(root, set(paths), rpm_files)
+    loaded = {}
+    for path, gone in paths.items():
+        o = own.get(path)
+        if o:
+            loaded[o] = loaded.get(o, False) or gone
+    return {"seen": seen, "total": total, "loaded": loaded, "native": sorted(native)}
+
+
 def main():
     out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|gz")
     errs = []
@@ -322,16 +537,17 @@ def main():
     except OSError:
         me = ""
     ids = [c for c in sh("docker", "ps", "-q", "--no-trunc").split() if c not in me]
-    seen = set()
-    n = 0
+    images = {}                 # image id → [name, pid of its first container, every container id]
     for cid in ids:
         # name as `docker ps` shows it (an image id once its tag has moved on)
         info = sh("docker", "ps", "-f", "id=" + cid, "--format", "{{.Image}}").strip().split("\n")[:1] + \
             sh("docker", "inspect", "-f", "{{.Image}}|{{.State.Pid}}", cid).strip().split("|")
-        if len(info) != 3 or info[1] in seen:
+        if len(info) != 3:
             continue
-        name, iid, pid = info
-        seen.add(iid)
+        images.setdefault(info[1], [info[0], info[2], []])[2].append(cid)
+    cpids = container_pids()
+    n = 0
+    for name, pid, cids in images.values():
         root = f"/proc/{pid}/root"
         if pid in ("", "0") or not os.path.isdir(root + "/"):
             errs.append(f"{name}: container root not readable")
@@ -352,7 +568,8 @@ def main():
             d = head(os.path.join(root, rel), 64 << 20)
             if d is not None:
                 add(p + "os/" + rel.replace("/", "_"), d)
-        fmt, rows, err = rpm_packages(root)
+        rpmf = {}
+        fmt, rows, err = rpm_packages(root, rpmf)
         if fmt or err:
             add(p + "os/rpm_packages", ((f"#error {err}" if err else f"#format {fmt}") + "\n" + "\n".join(rows)).encode())
         sd = os.path.join(root, "var/lib/dpkg/status.d")
@@ -363,6 +580,13 @@ def main():
                     if d:
                         add(p + "os/statusd_" + f, d)
         walk_root(root, skip, add, p)
+        try:
+            pids = sorted({x for c in cids for x in cpids.get(c, [])}, key=int)
+            r = inuse_report(root, pids or [pid], rpm_files=rpmf)
+            r["main_only"] = not pids               # cgroup lookup found nothing: only the main process was read
+            add(p + "inuse", json.dumps(r).encode())
+        except Exception as e:  # noqa: BLE001 — in-use is extra; the package list above is what matters
+            errs.append(f"{name}: in-use check failed: {type(e).__name__}: {e}")
     add("ERRORS", "\n".join(errs).encode())
     out.close()
 
