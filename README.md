@@ -57,12 +57,13 @@ docker run --rm ghcr.io/casareanderson/sieve collector | sudo python3 - \
 ## Usage
 
 ```
-sieve host          # this machine: dpkg, apk or rpm packages, plus Python packages pip installed outside the OS
+sieve host          # this machine: dpkg, apk or rpm packages, Python packages pip installed outside the OS, global npm
 sieve containers    # every running Docker container on this machine (needs root)
 sieve all           # both
+sieve path DIR ...  # project directories: lockfiles, node_modules, requirements, virtualenvs (see below)
 ```
 
-Options (for `host`, `containers` and `all`):
+Options (for `host`, `containers`, `all` and `path`):
 
 | option | what it does |
 |---|---|
@@ -76,9 +77,46 @@ Options (for `host`, `containers` and `all`):
 | `--kernel` | also check kernel packages (skipped by default, see Limits) |
 | `--root PATH` | `host` and `all`: read the host's packages from this directory instead of `/` (for example the host's `/` mounted at `/host` in a container) |
 | `--limit N` | table rows to print, default 50, `0` for all; the summary line always counts everything |
+| `--depth N` | `path`: how deep to look under each directory, default 8 |
 
-Exit codes: `1` if any known-exploited (KEV) finding is in the output, `2` if part of the scan failed, otherwise
-`0`. Filters apply first, so `sieve all --fixable-only` in cron or CI fails only on KEV findings you can actually fix.
+Exit codes: `1` if any known-malicious package or known-exploited (KEV) finding is in the output, `2` if part of
+the scan failed, otherwise `0`. Filters apply first, so `sieve all --fixable-only` in cron or CI fails only on KEV
+findings you can actually fix. A malicious package is never hidden by a filter.
+
+### Project directories and malicious packages
+
+`sieve path` scans what a project has pinned or installed, without running npm, yarn, pnpm, pip or node:
+
+| file | what is read |
+|---|---|
+| `package-lock.json`, `npm-shrinkwrap.json` | every package, lockfile versions 1, 2 and 3 |
+| `yarn.lock` | classic (v1) and berry (v2+); workspace and link entries skipped |
+| `pnpm-lock.yaml` | lockfile versions 5, 6 and 9 |
+| `node_modules/` | every installed `package.json`, nested ones included |
+| `requirements*.txt` | `name==version` pins (ranges can't be matched to one version) |
+| `poetry.lock`, `uv.lock` | every `[[package]]`; your own editable or path projects skipped |
+| `site-packages/` | `*.dist-info` metadata, so a virtualenv inside the project is covered |
+
+`.git` is never read. A lockfile sieve can't parse (a pnpm `lockfileVersion` it doesn't know, broken JSON) is
+named in the output and marks the scan partial, instead of looking like a clean project.
+
+**Known-malicious packages come first.** OSV carries the OpenSSF malicious-packages feed (`MAL-` ids), and GitHub
+files planted malware as CWE-506. A package that matches is not a bug with a patch: someone put code there on
+purpose. sieve ranks it above everything else, shows it as `☠ MALWARE`, folds the duplicate records into one row,
+exits `1`, and in SARIF reports it as `error` with a security-severity of 10.0:
+
+```
+$ sieve path ./demo
+# path:/demo: project files, 2 packages  (read 1 package-lock.json)
+
+ALERT      EPSS  SEVERITY  ID              PACKAGE         INSTALLED → FIXED             TARGET
+☠ MALWARE  -     CRITICAL  MAL-2025-20690  flatmap-stream  0.1.1 → malicious: remove it  path:/demo
+
+1 MALICIOUS PACKAGE (remove it, rotate secrets), 1 findings, 0 actively exploited, 0 fixable
+```
+
+(`flatmap-stream` 0.1.1 is the 2018 event-stream backdoor. The lockfile only names it; nothing was installed.)
+If you find one: remove it, rebuild from a clean lockfile, and rotate every secret the machine or CI job could read.
 
 ### Examples
 
@@ -89,15 +127,15 @@ no fix released yet", and Debian marks a lot of it as unimportant.
 $ sieve host --limit 8
 # host: debian 13, 811 packages
 
-KEV  EPSS   SEVERITY  ID              PACKAGE              INSTALLED → FIXED                          TARGET
-     73.3%  UNKNOWN   CVE-2011-3389   gnutls-bin           3.8.9-3+deb13u4 → no fix                   host
-     73.3%  UNKNOWN   CVE-2011-3389   libgnutls-dane0t64   3.8.9-3+deb13u4 → no fix                   host
-     73.3%  UNKNOWN   CVE-2011-3389   libgnutls30t64       3.8.9-3+deb13u4 → no fix                   host
-     20.9%  LOW       CVE-2019-6110   openssh-client       1:10.0p1-7+deb13u4 → unimportant (Debian)  host
-     20.9%  LOW       CVE-2019-6110   openssh-server       1:10.0p1-7+deb13u4 → unimportant (Debian)  host
-     20.9%  LOW       CVE-2019-6110   openssh-sftp-server  1:10.0p1-7+deb13u4 → unimportant (Debian)  host
-     20.9%  LOW       CVE-2019-6110   ssh                  1:10.0p1-7+deb13u4 → unimportant (Debian)  host
-     13.0%  LOW       CVE-2020-15778  openssh-client       1:10.0p1-7+deb13u4 → unimportant (Debian)  host
+ALERT  EPSS   SEVERITY  ID              PACKAGE              INSTALLED → FIXED                          TARGET
+       73.3%  UNKNOWN   CVE-2011-3389   gnutls-bin           3.8.9-3+deb13u4 → no fix                   host
+       73.3%  UNKNOWN   CVE-2011-3389   libgnutls-dane0t64   3.8.9-3+deb13u4 → no fix                   host
+       73.3%  UNKNOWN   CVE-2011-3389   libgnutls30t64       3.8.9-3+deb13u4 → no fix                   host
+       20.9%  LOW       CVE-2019-6110   openssh-client       1:10.0p1-7+deb13u4 → unimportant (Debian)  host
+       20.9%  LOW       CVE-2019-6110   openssh-server       1:10.0p1-7+deb13u4 → unimportant (Debian)  host
+       20.9%  LOW       CVE-2019-6110   openssh-sftp-server  1:10.0p1-7+deb13u4 → unimportant (Debian)  host
+       20.9%  LOW       CVE-2019-6110   ssh                  1:10.0p1-7+deb13u4 → unimportant (Debian)  host
+       13.0%  LOW       CVE-2020-15778  openssh-client       1:10.0p1-7+deb13u4 → unimportant (Debian)  host
 … 1957 more (use --limit 0 to show all, or --json)
 
 1965 findings, 0 actively exploited, 0 fixable
@@ -111,19 +149,19 @@ $ sieve containers --from-tar old-images.tgz --min-severity high --limit 12
 # example/old-web:2: debian 12, 2 packages
 # example/buster-tools:0.9: debian 10, 2 packages
 
-KEV  EPSS    SEVERITY  ID              PACKAGE         INSTALLED → FIXED                    TARGET
-⚠    100.0%  HIGH      CVE-2021-3156   sudo            1.8.27-1+deb10u2 → 1.8.27-1+deb10u3  example/buster-tools:0.9
-⚠    94.3%   HIGH      CVE-2021-4034   policykit-1     0.105-25 → 0.105-25+deb10u1          example/buster-tools:0.9
-     99.5%   HIGH      CVE-2024-6387   openssh-server  1:9.2p1-2 → 1:9.2p1-2+deb12u3        example/old-web:2
-     79.7%   CRITICAL  CVE-2023-38408  openssh-server  1:9.2p1-2 → 1:9.2p1-2+deb12u1        example/old-web:2
-     78.5%   CRITICAL  CVE-2023-38545  libcurl         8.1.0-r0 → 8.4.0-r0                  example/legacy-app:1.0
-     66.6%   HIGH      CVE-2024-6119   libcrypto3      3.1.0-r4 → 3.1.7-r0                  example/legacy-app:1.0
-     58.1%   HIGH      CVE-2023-38039  libcurl         8.1.0-r0 → 8.3.0-r0                  example/legacy-app:1.0
-     55.4%   HIGH      CVE-2023-22809  sudo            1.8.27-1+deb10u2 → 1.8.27-1+deb10u5  example/buster-tools:0.9
-     36.1%   HIGH      CVE-2024-2398   libcurl         8.1.0-r0 → 8.7.1-r0                  example/legacy-app:1.0
-     5.6%    CRITICAL  CVE-2024-5535   libcrypto3      3.1.0-r4 → 3.1.6-r0                  example/legacy-app:1.0
-     3.2%    CRITICAL  CVE-2022-48174  busybox         1.36.0-r9 → 1.36.1-r1                example/legacy-app:1.0
-     2.3%    CRITICAL  CVE-2023-28531  openssh-server  1:9.2p1-2 → 1:9.2p1-2+deb12u2        example/old-web:2
+ALERT  EPSS    SEVERITY  ID              PACKAGE         INSTALLED → FIXED                    TARGET
+⚠      100.0%  HIGH      CVE-2021-3156   sudo            1.8.27-1+deb10u2 → 1.8.27-1+deb10u3  example/buster-tools:0.9
+⚠      94.3%   HIGH      CVE-2021-4034   policykit-1     0.105-25 → 0.105-25+deb10u1          example/buster-tools:0.9
+       99.5%   HIGH      CVE-2024-6387   openssh-server  1:9.2p1-2 → 1:9.2p1-2+deb12u3        example/old-web:2
+       79.7%   CRITICAL  CVE-2023-38408  openssh-server  1:9.2p1-2 → 1:9.2p1-2+deb12u1        example/old-web:2
+       78.5%   CRITICAL  CVE-2023-38545  libcurl         8.1.0-r0 → 8.4.0-r0                  example/legacy-app:1.0
+       66.6%   HIGH      CVE-2024-6119   libcrypto3      3.1.0-r4 → 3.1.7-r0                  example/legacy-app:1.0
+       58.1%   HIGH      CVE-2023-38039  libcurl         8.1.0-r0 → 8.3.0-r0                  example/legacy-app:1.0
+       55.4%   HIGH      CVE-2023-22809  sudo            1.8.27-1+deb10u2 → 1.8.27-1+deb10u5  example/buster-tools:0.9
+       36.1%   HIGH      CVE-2024-2398   libcurl         8.1.0-r0 → 8.7.1-r0                  example/legacy-app:1.0
+       5.6%    CRITICAL  CVE-2024-5535   libcrypto3      3.1.0-r4 → 3.1.6-r0                  example/legacy-app:1.0
+       3.2%    CRITICAL  CVE-2022-48174  busybox         1.36.0-r9 → 1.36.1-r1                example/legacy-app:1.0
+       2.3%    CRITICAL  CVE-2023-28531  openssh-server  1:9.2p1-2 → 1:9.2p1-2+deb12u2        example/old-web:2
 … 23 more (use --limit 0 to show all, or --json)
 
 35 findings, 2 actively exploited, 31 fixable (102 hidden by filters)
@@ -223,10 +261,12 @@ is no fix), `severity`, `kev`, `epss`, `epss_percentile`, `tier`, `status`, `tar
 ![How sieve works: package lists, OSV.dev, KEV and EPSS, ranked table](docs/sieve-how.png)
 
 **Package lists.** For the host: `/var/lib/dpkg/status`, `/lib/apk/db/installed` or the rpm database,
-`/etc/os-release`, and every `*.dist-info`/`*.egg-info` under the system Python site directories. Python packages
-that dpkg, apk or rpm installed are left to the distro's advisories, which know about backported fixes. The rpm
-database is read directly, with no `rpm` binary: SQLite (EL9, Fedora), ndb (openSUSE) and the older BerkeleyDB
-hash file (EL7/EL8). For containers: the collector finds each
+`/etc/os-release`, every `*.dist-info`/`*.egg-info` under the system Python site directories, and the
+`package.json` of every global npm package (`/usr/lib/node_modules`, `/usr/local/lib/node_modules`, and any
+`prefix=` set in an npmrc), read directly so neither node nor the `rpm` binary needs to be installed. Python and
+npm packages that dpkg, apk or rpm installed are left to the distro's advisories, which know about backported
+fixes. The rpm database is read directly: SQLite (EL9, Fedora), ndb (openSUSE) and the older BerkeleyDB hash file
+(EL7/EL8). For containers: the collector finds each
 image with a running container and reads its real root filesystem through `/proc/<pid>/root`, skipping mounted
 volumes. From each image it takes the OS package database, Python and npm package metadata, the build info
 embedded in Go binaries, and the dependency list Rust binaries carry when built with `cargo-auditable`.
@@ -241,8 +281,9 @@ release. Alpine's own secdb is merged in because OSV's Alpine import can lag beh
 down to what matching needs before they're cached, because Ubuntu and Debian records list every affected version
 of every binary and the full bodies ran a scan past 5 GB of memory.
 
-**Ranking.** Known-exploited first, then what is likely to be exploited and can be fixed:
+**Ranking.** Malware and known-exploited first, then what is likely to be exploited and can be fixed:
 
+0. a known-malicious package (OpenSSF `MAL-`, or an advisory filed as embedded malicious code): remove it
 1. in CISA KEV (known exploited in the wild), fix or not
 2. EPSS of 10% or more (at least a 1 in 10 chance of exploitation in the next 30 days) with a fix available
 3. CRITICAL with a fix available

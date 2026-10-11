@@ -4,7 +4,8 @@ One rule per advisory id, one result per (advisory, package, target). A package 
 each result points at a stable pseudo-path `<target>/<package>` (GitHub needs a physical location to show an
 alert) and carries the same pair as a logical location. The level follows sieve's ranking: known-exploited, a
 fixable finding with EPSS >= 10%, CRITICAL and HIGH are `error`, MEDIUM is `warning`, the rest `note`. A KEV
-finding is scored at least 9.0 in `security-severity`, so GitHub files it as critical whatever its label says.
+finding is scored at least 9.0 in `security-severity`, so GitHub files it as critical whatever its label says; a
+known-malicious package is always `error` at 10.0 and tagged `malicious`.
 `partialFingerprints` hash target + package + advisory (not the version), so an alert stays the same alert when
 the package is upgraded but still affected, and closes when the finding goes away.
 """
@@ -18,15 +19,18 @@ SCHEMA = "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sar
 INFO_URI = "https://github.com/casareanderson/sieve"
 SCORE = {"CRITICAL": 9.5, "HIGH": 8.0, "MEDIUM": 5.5, "LOW": 3.0, "UNKNOWN": 0.0}
 KEV_FLOOR = 9.0
+MALICIOUS_SCORE = 10.0
 
 
 def level(f):
-    if f["kev"] or (f["fixed"] and (f.get("epss") or 0) >= EPSS_HOT) or f["severity"] in ("CRITICAL", "HIGH"):
+    if f.get("malicious") or f["kev"] or (f["fixed"] and (f.get("epss") or 0) >= EPSS_HOT) or f["severity"] in ("CRITICAL", "HIGH"):
         return "error"
     return "warning" if f["severity"] == "MEDIUM" else "note"
 
 
 def score(f):
+    if f.get("malicious"):
+        return MALICIOUS_SCORE
     s = SCORE.get(f["severity"], 0.0)
     return max(s, KEV_FLOOR) if f["kev"] else s
 
@@ -38,6 +42,9 @@ def _uri(f):
 def _message(f):
     fix = f"fixed in {f['fixed']}" if f["fixed"] else ("no fix released yet" if f["status"] in ("affected", "fixed")
                                                       else f["status"])
+    if f.get("malicious"):
+        return (f"{f['package']} {f['installed']} in {f['target'] or 'host'} is a known-malicious package "
+                f"({f['id']}). Remove it, then rotate any secrets this machine had access to.")
     extra = []
     if f["kev"]:
         extra.append("actively exploited (CISA KEV)")
@@ -51,7 +58,7 @@ def _rule(f):
     url = f["url"] or f"https://osv.dev/vulnerability/{f['id']}"
     short = f["summary"] or f"{f['id']} in {f['package']}"
     full = (f["details"] or short)[:1000]
-    tags = ["security", "vulnerability"] + (["kev"] if f["kev"] else [])
+    tags = ["security", "vulnerability"] + (["kev"] if f["kev"] else []) + (["malicious"] if f.get("malicious") else [])
     return {"id": f["id"], "name": f["id"].replace("-", ""),
             "shortDescription": {"text": short},
             "fullDescription": {"text": full},
@@ -74,8 +81,9 @@ def build(targets, findings, errors, version=__version__):
             if float(r["properties"]["security-severity"]) < score(f):
                 r["properties"]["security-severity"] = f"{score(f):.1f}"
                 r["defaultConfiguration"]["level"] = level(f)
-            if f["kev"] and "kev" not in r["properties"]["tags"]:
-                r["properties"]["tags"].append("kev")
+            for t, on in (("kev", f["kev"]), ("malicious", f.get("malicious"))):
+                if on and t not in r["properties"]["tags"]:
+                    r["properties"]["tags"].append(t)
         key = f"{f['target']}|{f['package']}|{f['id']}"
         results.append({
             "ruleId": f["id"], "ruleIndex": index[f["id"]], "level": level(f),
@@ -86,7 +94,8 @@ def build(targets, findings, errors, version=__version__):
                                       "kind": "package"}]}],
             "partialFingerprints": {"sieveFinding/v1": hashlib.sha256(key.encode()).hexdigest()},
             "properties": {"package": f["package"], "installed": f["installed"], "fixed": f["fixed"],
-                           "target": f["target"], "kev": f["kev"], "epss": f.get("epss"), "tier": f.get("tier"),
+                           "target": f["target"], "kev": f["kev"], "malicious": bool(f.get("malicious")),
+                           "epss": f.get("epss"), "tier": f.get("tier"),
                            "status": f["status"]}})
     notes = [{"level": "error", "message": {"text": e}} for e in errors]
     notes += [{"level": "warning", "message": {"text": f"{t['name']}: {t['status']}: {'; '.join(t['notes'])}"}}
