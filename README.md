@@ -67,6 +67,7 @@ Options (for `host`, `containers` and `all`):
 | option | what it does |
 |---|---|
 | `--json` | machine-readable output |
+| `--sarif` | SARIF 2.1.0 output for GitHub code scanning (see [Code scanning](#code-scanning)) |
 | `--min-severity low\|medium\|high\|critical` | hide findings below this severity (known-exploited findings are always shown) |
 | `--kev-only` | only findings in CISA's known-exploited list |
 | `--fixable-only` | only findings with a fixed version available |
@@ -171,12 +172,45 @@ jobs:
 | `args` | `""` | extra sieve options |
 | `fail-on-kev` | `true` | fail the step on a known-exploited finding; `false` turns that into a warning |
 | `python-version` | `3.12` | Python to install sieve with |
+| `sarif` | `false` | also write a SARIF file from the same scan, for GitHub code scanning |
 
-Outputs: `findings`, `kev`, `fixable` (the summary counts after filters) and `report` (path to the JSON report).
+Outputs: `findings`, `kev`, `fixable` (the summary counts after filters), `report` (path to the JSON report) and
+`sarif` (path to the SARIF file, when the `sarif` input is `true`).
 A scan that partly failed (exit code 2) always fails the step. On GitHub-hosted runners this mostly tells you
 about the runner image; it's more useful on self-hosted runners and in jobs that start the containers you ship.
 
 `@v1` follows the latest 0.x release; pin a release tag such as `@v0.1.0` if you want it fixed.
+
+### Code scanning
+
+`--sarif` (or the Action's `sarif: "true"`) writes SARIF 2.1.0, so findings show up in the repository's
+**Security → Code scanning** tab, with GitHub's own alert tracking, dismissals and history:
+
+```yaml
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write       # to upload SARIF
+      contents: read
+    steps:
+      - id: sieve
+        uses: casareanderson/sieve@v1
+        with:
+          sarif: "true"
+          fail-on-kev: "false"       # let the upload run; the alerts are the signal
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always() && steps.sieve.outputs.sarif != ''
+        with:
+          sarif_file: ${{ steps.sieve.outputs.sarif }}
+          category: sieve-host
+```
+
+One rule per advisory (help link to the advisory), one alert per advisory, package and target. Known-exploited
+findings, fixable findings with EPSS ≥ 10%, CRITICAL and HIGH are `error`, MEDIUM is `warning`, the rest `note`;
+a KEV finding is scored at least 9.0 so GitHub files it as critical. A package has no source line, so each alert
+points at `<target>/<package>`. Alerts are fingerprinted on target, package and advisory, not version: upgrading to
+a version that is still affected keeps the same alert, and fixing it closes the alert on the next upload.
 
 ### JSON
 

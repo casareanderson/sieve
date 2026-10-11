@@ -23,6 +23,8 @@ def parser():
     p.add_argument("--version", action="version", version=f"sieve {__version__}")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--json", action="store_true", help="machine-readable output")
+    common.add_argument("--sarif", action="store_true",
+                        help="SARIF 2.1.0 output, for GitHub code scanning (upload with codeql-action/upload-sarif)")
     common.add_argument("--min-severity", choices=["low", "medium", "high", "critical"], type=str.lower,
                         help="hide findings below this severity (known-exploited findings are always shown)")
     common.add_argument("--kev-only", action="store_true", help="only known-exploited findings (CISA KEV)")
@@ -135,7 +137,11 @@ def main(argv=None):
     total = len(findings)
     findings = rank.rank(rank.apply_filters(findings, args.min_severity, args.kev_only, args.fixable_only))
     s = rank.summary(findings)
-    if args.json:
+    if args.sarif:
+        from . import sarif
+        json.dump(sarif.build([t.as_dict() for t in targets], findings, errors), sys.stdout, indent=1)
+        sys.stdout.write("\n")
+    elif args.json:
         json.dump({"sieve": __version__, "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                    "targets": [t.as_dict() for t in targets], "errors": errors,
                    "summary": dict(s, unfiltered=total), "findings": findings}, sys.stdout, indent=1)
