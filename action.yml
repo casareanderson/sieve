@@ -22,6 +22,10 @@ inputs:
     description: Python version to run sieve with.
     required: false
     default: "3.12"
+  sarif:
+    description: Also write a SARIF 2.1.0 file for GitHub code scanning (output `sarif`), from the same scan.
+    required: false
+    default: "false"
 
 outputs:
   findings:
@@ -36,6 +40,9 @@ outputs:
   report:
     description: Path to the full JSON report.
     value: ${{ steps.scan.outputs.report }}
+  sarif:
+    description: Path to the SARIF file when the `sarif` input is true; upload it with github/codeql-action/upload-sarif.
+    value: ${{ steps.scan.outputs.sarif }}
 
 runs:
   using: composite
@@ -55,6 +62,7 @@ runs:
         SIEVE_COMMAND: ${{ inputs.command }}
         SIEVE_ARGS: ${{ inputs.args }}
         SIEVE_FAIL_ON_KEV: ${{ inputs.fail-on-kev }}
+        SIEVE_SARIF: ${{ inputs.sarif }}
       run: |
         case "$SIEVE_COMMAND" in
           host) run=() ;;
@@ -83,6 +91,11 @@ runs:
         s = d["summary"]
         with open(os.environ["GITHUB_OUTPUT"], "a") as out:
             out.write(f"findings={s['findings']}\nkev={s['kev']}\nfixable={s['fixable']}\nreport={sys.argv[1]}\n")
+            if os.environ.get("SIEVE_SARIF") == "true":      # converted from this report: no second scan
+                from sieve import sarif
+                path = os.path.join(os.environ["RUNNER_TEMP"], "sieve.sarif")
+                json.dump(sarif.from_report(d), open(path, "w"), indent=1)
+                out.write(f"sarif={path}\n")
         lines = ["## sieve", ""]
         lines += [f"- `{t['name']}`: {t['os']}, {t['packages']} packages"
                   + ("" if t["status"] == "ok" else f" **[{t['status']}]**") for t in d["targets"]]
