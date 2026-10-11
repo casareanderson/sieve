@@ -61,6 +61,7 @@ sieve host          # this machine: dpkg, apk or rpm packages, Python packages p
 sieve containers    # every running Docker container on this machine (needs root)
 sieve all           # both
 sieve path DIR ...  # project directories: lockfiles, node_modules, requirements, virtualenvs (see below)
+sieve verify        # has any installed file changed since its package manager put it there? (see Verify)
 ```
 
 Options (for `host`, `containers`, `all` and `path`):
@@ -118,6 +119,68 @@ ALERT      EPSS  SEVERITY  ID              PACKAGE         INSTALLED → FIXED  
 
 (`flatmap-stream` 0.1.1 is the 2018 event-stream backdoor. The lockfile only names it; nothing was installed.)
 If you find one: remove it, rebuild from a clean lockfile, and rotate every secret the machine or CI job could read.
+
+### Verify
+
+`sieve verify` asks a different question from the CVE scan: **has any installed file been changed since its
+package manager put it there?** A vulnerability list can't see a swapped `sshd` or an edited library whose version
+number stayed the same. Every package manager already keeps a checksum for each file it installs, in a
+world-readable file next to its database, so sieve re-hashes the files and compares. No binary, no download, and
+no root for the host (unreadable files are counted and named in the output).
+
+```
+sieve verify                              # this machine
+sieve verify --root /mnt/image            # a mounted filesystem or an exported image
+sudo sieve verify --containers [--host]   # every running Docker container, read in place
+sieve verify --packages openssh-server,sudo
+```
+
+| system | checksums read | algorithm |
+|---|---|---|
+| Debian, Ubuntu | `/var/lib/dpkg/info/<pkg>.md5sums` | MD5 |
+| Alpine | `/lib/apk/db/installed` (`Z:` lines) | SHA-1 |
+| rpm (AlmaLinux, Rocky, RHEL, openSUSE, Fedora) | the rpm database's own headers (FILEDIGESTS) | SHA-256 on current releases, MD5 on old ones |
+| Python (pip) | `*.dist-info/RECORD` | SHA-256 |
+| npm | **nothing to check**: npm keeps no checksum for installed files (a lockfile's `integrity` is the hash of the downloaded tarball, not of what is on disk) | |
+
+```
+$ sieve verify --root ./rocky-9-minimal
+# host (./rocky-9-minimal): rocky 9.8, 118 packages, 4038 files  (76 config files skipped; …; rpm checked in 0.6s)
+
+STATE       PACKAGE                       FILE                TARGET
+changed  ⚠  coreutils-single 8.32-40.el9  /usr/bin/sha256sum  host (./rocky-9-minimal)
+
+1 changed (1 security-critical), 0 missing, 4038 files checked
+```
+
+(That image had one byte appended to `sha256sum` for the demo.) What it reports:
+
+- **changed**: the file's content differs from the checksum its package recorded. Files under `/usr/bin`,
+  `/usr/sbin`, `/bin`, `/sbin`, PAM modules, `sshd`, `sudo`, `su`, `login`, the C library and the dynamic loader
+  are marked ⚠ security-critical (SARIF `error`); other changed files are `warning`.
+- **now X's file**: two Python distributions can install into the same folder (`PyJWT` and `jwt` both own `jwt/`).
+  When a changed file matches another installed distribution's RECORD, sieve says so instead of leaving it
+  unexplained. It is still a broken install (`import jwt` gets the other library), so it still counts as changed.
+  Found exactly this in a popular crawler image.
+- **missing**: a file the package installed is gone. Minimal and official images delete docs, man pages and
+  translations after install; those are counted as *trimmed* and not listed (`--all-missing` lists them).
+- **not checked by design**: dpkg `path-exclude` (docs a minimal image never unpacked), rpm files that were never
+  installed (nodocs, other languages, the other multilib architecture) and rpm files the package marks
+  `%verify(not md5)` because it rewrites them itself (glibc's `gconv-modules.cache`), the same files `rpm -V` skips.
+- **config files** are meant to change, so dpkg conffiles and rpm `%config` files are skipped unless you pass
+  `--include-config`. Debian's `/usr` merge diversions and container mount points (volumes, `/etc/hosts`) are
+  handled, and inside a container root an absolute symlink is followed within the container, never onto the host.
+
+Exit codes: `1` if a packaged file changed, `2` if nothing could be checked, otherwise `0`. Missing files are
+reported but don't fail the run. `--json` and `--sarif` work as for the scan.
+
+**It's a tripwire, not proof.** MD5 and SHA-1 catch accidental changes, failed upgrades and naive tampering, but
+anyone with root can rewrite the checksum lists as easily as the files. A clean result means nothing was changed
+*carelessly*; a changed file is a question to answer (a local edit? a hotfix? someone else?), not a verdict.
+
+Measured: a Debian 13 Proxmox node, 811 packages and 70,795 files, in 34 s (clean); twelve running containers,
+81,079 files, in 31 s. It is IO-bound: on a spinning disk the first full pass over a desktop-sized install took
+over 20 minutes, so use `--packages` for a quick look or run it at night.
 
 ### Examples
 
@@ -368,6 +431,8 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
 - **Some openSUSE records carry a wrong fixed version.** openSUSE-SU-2024:10106-1 says bash is fixed in 7.0, which
   would flag every Tumbleweed with 2014's Shellshock. For openSUSE's "… on GA media" records sieve trusts the
   build named in the title instead.
+- **`sieve verify` can't check npm** (npm keeps no per-file checksums for installed packages), and it can't tell a
+  careful attacker with root from nothing: they can rewrite the checksum lists too. See [Verify](#verify).
 - **Go binaries built before Go 1.18** store their build info differently and are counted but not read.
 - **In use is a snapshot**, and only native code is visible: pure-Python, npm, Go and Rust packages are always
   "unknown". See [In use](#in-use).

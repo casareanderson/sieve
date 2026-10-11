@@ -38,7 +38,7 @@ def parser():
                         help="also check kernel packages (linux-image, linux-libc-dev, ...); skipped by default")
     common.add_argument("--limit", type=int, default=50, metavar="N",
                         help="table rows to print (default 50, 0 = all); the summary always counts everything")
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,collector}")
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,verify,collector}")
     root = argparse.ArgumentParser(add_help=False)
     root.add_argument("--root", default="/", metavar="PATH",
                       help="read the host's packages from this directory instead of / (e.g. the host's / "
@@ -52,6 +52,19 @@ def parser():
                         "node_modules, requirements*.txt, poetry.lock, uv.lock, virtualenvs")
     pa.add_argument("dirs", nargs="+", metavar="DIR")
     pa.add_argument("--depth", type=int, default=8, metavar="N", help="how deep to look under each DIR (default 8)")
+    v = sub.add_parser("verify", parents=[root], help="has any installed file changed since its package manager put it "
+                       "there? (dpkg, apk, rpm and pip checksums already on disk)")
+    v.add_argument("--json", action="store_true", help="machine-readable output")
+    v.add_argument("--sarif", action="store_true", help="SARIF 2.1.0 output, for GitHub code scanning")
+    v.add_argument("--packages", metavar="A,B", help="only these packages (dpkg/apk/rpm names or Python distributions)")
+    v.add_argument("--include-config", action="store_true",
+                   help="also check dpkg conffiles (expected to differ when you have edited them)")
+    v.add_argument("--containers", action="store_true",
+                   help="check every running Docker container in place instead of the host (needs root)")
+    v.add_argument("--host", action="store_true", help="with --containers: check the host as well")
+    v.add_argument("--all-missing", action="store_true",
+                   help="also list missing docs, man pages and translations (images trim these; counted otherwise)")
+    v.add_argument("--limit", type=int, default=50, metavar="N", help="table rows to print (default 50, 0 = all)")
     sub.add_parser("collector", help="print the standalone collector script (pipe it to `python3 -` elsewhere)")
     return p
 
@@ -147,6 +160,9 @@ def main(argv=None):
     if args.cmd == "collector":
         sys.stdout.write(sources.collector_source())
         return EXIT_OK
+    if args.cmd == "verify":
+        from . import verify
+        return verify.main(args)
 
     def warn(m):
         print(f"sieve: {m}", file=sys.stderr)
