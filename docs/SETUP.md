@@ -4,6 +4,11 @@ This takes about five minutes on a normal Linux box. Every block marked as teste
 Ubuntu runner every week by [`setup-check`](../.github/workflows/setup-check.yml), so if a step here stops
 working, that check goes red before you find out the hard way.
 
+
+![What a passing run looks like on a fresh machine (excerpt from `setup-check` on 11 October 2026). Secrets in the output are masked](setup-run.png)
+
+*What a passing run looks like on a fresh machine (excerpt from `setup-check` on 11 October 2026). Secrets in the output are masked.*
+
 ## What you need
 
 - Linux. sieve reads Debian/Ubuntu (`dpkg`) and Alpine (`apk`) package databases for OS packages. On other
