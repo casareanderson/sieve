@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sieve"
+name = "sieve-scan"   # PyPI name (sieve was taken); the module and the command are still `sieve`
 dynamic = ["version"]
 description = "Find the CVEs that matter on a Linux box and its running containers, using OSV.dev, CISA KEV and EPSS."
 readme = "README.md"

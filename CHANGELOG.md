@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 (2026-10-11)
+
+- Published to PyPI as `sieve-scan` (`pipx install sieve-scan`); the command is still `sieve`. No code change.
+
 ## 0.3.0 (2026-10-11)
 
 ### Output
