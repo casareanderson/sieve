@@ -50,6 +50,9 @@ def _message(f):
         extra.append("actively exploited (CISA KEV)")
     if f.get("epss") is not None:
         extra.append(f"EPSS {f['epss'] * 100:.1f}%")
+    if f.get("in_use") == "loaded":
+        extra.append("loaded in a running process" + (", which still runs the old copy: restart it"
+                                                      if f.get("restart_needed") else ""))
     tail = f" ({', '.join(extra)})" if extra else ""
     return f"{f['package']} {f['installed']} in {f['target'] or 'host'} is affected by {f['id']}; {fix}.{tail}"
 
@@ -96,7 +99,8 @@ def build(targets, findings, errors, version=__version__):
             "properties": {"package": f["package"], "installed": f["installed"], "fixed": f["fixed"],
                            "target": f["target"], "kev": f["kev"], "malicious": bool(f.get("malicious")),
                            "epss": f.get("epss"), "tier": f.get("tier"),
-                           "status": f["status"]}})
+                           "status": f["status"], "inUse": f.get("in_use", "unknown"),
+                           "restartNeeded": bool(f.get("restart_needed"))}})
     notes = [{"level": "error", "message": {"text": e}} for e in errors]
     notes += [{"level": "warning", "message": {"text": f"{t['name']}: {t['status']}: {'; '.join(t['notes'])}"}}
               for t in targets if t.get("status") != "ok"]

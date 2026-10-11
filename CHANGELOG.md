@@ -32,6 +32,13 @@
   filter, and exit code 1 like KEV.
 - The advisory cache schema is now 4 (it keeps AlmaLinux `related` CVEs and the malicious flag), so the first scan
   after upgrading refetches advisories once.
+- **In use**: every finding says whether its package's code is loaded in a running process right now (`yes`, `no`
+  or `?`, from `/proc/<pid>/maps` traced back through dpkg/apk/rpm file lists and wheel `RECORD`s), with `↻` when an
+  upgrade replaced the file but the old copy is still running. Loaded findings rank first within their tier;
+  `--in-use-only` keeps just those. In the table, `--json` (`in_use`, `restart_needed`, per-target process
+  coverage) and SARIF (`inUse`, `restartNeeded`). Containers get it from the collector, for every container of an
+  image. Without root it reports how many processes it could read and never says `no`. rpm file lists come from
+  the same rpmdb read as the package list.
 
 ### Output
 

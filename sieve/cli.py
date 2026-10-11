@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import __version__, intel, osv, projects, rank, sources
+from . import __version__, inuse, intel, osv, projects, rank, sources
 
 EXIT_OK, EXIT_KEV, EXIT_ERROR = 0, 1, 2          # 1 = known-exploited (KEV) or known-malicious in the output
 
@@ -29,6 +29,8 @@ def parser():
                         help="hide findings below this severity (known-exploited findings are always shown)")
     common.add_argument("--kev-only", action="store_true", help="only known-exploited findings (CISA KEV)")
     common.add_argument("--fixable-only", action="store_true", help="only findings with a fixed version")
+    common.add_argument("--in-use-only", action="store_true",
+                        help="only findings whose code is loaded in a running process right now")
     common.add_argument("--cache", default=default_cache(), metavar="PATH",
                         help="advisory cache (default: %(default)s); KEV and EPSS files sit next to it")
     common.add_argument("--no-epss", action="store_true", help="do not download or use EPSS scores")
@@ -61,10 +63,11 @@ def scan(args, warn):
     kev = intel.kev_set(os.path.dirname(os.path.abspath(args.cache)))
 
     def run(t):
-        before = client.failed
+        before, start = client.failed, len(findings)
         try:
             if t.pkgs:
                 findings.extend(osv.match(client, t.pkgs, kev, target=t.name))
+                inuse.annotate(findings[start:], t)
         except Exception as e:  # noqa: BLE001 — one unreadable target must not stop the rest
             t.status = "error"
             t.notes.append(f"OSV query failed: {type(e).__name__}: {str(e)[:160]}")
@@ -72,6 +75,9 @@ def scan(args, warn):
         if lost and t.status == "ok":
             t.status = "partial"
             t.notes.append(f"{lost} advisories could not be fetched from OSV; counts may be low")
+        note = inuse.coverage_note(t.inuse)
+        if note:
+            t.notes.append(note)
         t.pkgs = []                                     # free the list once matched
         targets.append(t)
 
@@ -118,13 +124,16 @@ def _cut(s, n):
 
 
 def table(findings, limit):
-    rows = [("ALERT", "EPSS", "SEVERITY", "ID", "PACKAGE", "INSTALLED → FIXED", "TARGET")]
+    rows = [("ALERT", "EPSS", "SEVERITY", "IN USE", "ID", "PACKAGE", "INSTALLED → FIXED", "TARGET")]
+    use = {inuse.LOADED: "yes", inuse.NOT_LOADED: "no", inuse.UNKNOWN: "?"}
     shown = findings if not limit else findings[:limit]
     for f in shown:
         epss = f"{f['epss'] * 100:.1f}%" if f.get("epss") is not None else "-"
         fix = f["fixed"] or ("no fix" if f["status"] in ("affected", "fixed") else f["status"])
         flag = "☠ MALWARE" if f.get("malicious") else "⚠" if f["kev"] else ""
-        rows.append((flag, epss, f["severity"], f["id"], _cut(f["package"], 28),
+        rows.append((flag, epss, f["severity"],
+                     use.get(f.get("in_use"), "?") + (" ↻" if f.get("restart_needed") else ""), f["id"],
+                     _cut(f["package"], 28),
                      f"{_cut(f['installed'], 26)} → {_cut(fix, 26)}", _cut(f["target"], 32)))
     w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     lines = ["  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip() for r in rows]
@@ -143,7 +152,8 @@ def main(argv=None):
         print(f"sieve: {m}", file=sys.stderr)
     targets, findings, errors = scan(args, warn)
     total = len(findings)
-    findings = rank.rank(rank.apply_filters(findings, args.min_severity, args.kev_only, args.fixable_only))
+    findings = rank.rank(rank.apply_filters(findings, args.min_severity, args.kev_only, args.fixable_only,
+                                            args.in_use_only))
     s = rank.summary(findings)
     if args.sarif:
         from . import sarif
@@ -168,6 +178,10 @@ def main(argv=None):
         mal = (f"{n} MALICIOUS PACKAGE{'S' if n != 1 else ''} (remove {'them' if n != 1 else 'it'}, rotate secrets), "
                if n else "")
         print(f"{mal}{s['findings']} findings, {s['kev']} actively exploited, {s['fixable']} fixable{hidden}")
+        if any(t.inuse for t in targets):
+            print(f"{s['in_use']} in code running right now"
+                  + (f", {s['restart_needed']} still running an old copy that was upgraded on disk (↻: restart "
+                     "it)" if s["restart_needed"] else ""))
     for e in errors:
         warn(e)
     if s["kev"] or s["malicious"]:
