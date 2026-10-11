@@ -26,6 +26,31 @@ OSV.dev is the open database behind Google's osv-scanner. Debian, Ubuntu, Alpine
 PyPA, the Go team and RustSec all publish to it directly, so there is nothing to download, verify or keep patched
 on your side.
 
+## How it compares
+
+sieve is not a replacement for a full scanner suite. It does one job — find the CVEs that matter on a running
+Linux box and its containers — with no binary and no vulnerability database to keep patched. Here is where it
+differs from the tools the [benchmark](#benchmark) runs it against.
+
+| | sieve | trivy | grype | osv-scanner |
+|---|---|---|---|---|
+| Needs installing | `requests` only | a binary + a vuln DB | a binary + a vuln DB | a binary |
+| Vulnerability data | OSV.dev, queried live | bundled DB, downloaded | bundled DB, downloaded | OSV.dev, queried live |
+| Reads the package databases already on a box | yes | yes | yes | lockfiles / SBOMs |
+| Scans a **running** container's real filesystem (via `/proc`), not just the image | yes | no | no | no |
+| Flags whether the vulnerable code is **loaded in a process right now** | yes | no | no | no |
+| Checks an installed file has not been **tampered with** (`sieve verify`) | yes | no | no | no |
+| Scans another machine over SSH with nothing installed there | yes | no | no | no |
+| Known-malicious packages (OpenSSF `MAL-`) ranked above everything | yes | limited | no | via OSV |
+| Ranks fixable work by CISA KEV + EPSS by default | yes | optional | optional | no |
+| SBOM — export one, and scan one made by another tool | yes | yes | consumes | consumes |
+| SARIF for GitHub code scanning | yes | yes | yes | yes |
+
+trivy and grype are mature and far broader — IaC, secrets, licences, many more ecosystems — and if you want one
+tool to cover everything, use them. sieve stays deliberately small: the rows above are where a dependency-free
+scanner that looks at what is *actually running* earns its place alongside them. The weekly benchmark below keeps
+it honest that it does not miss the CVEs they catch.
+
 ## Install
 
 Full step-by-step setup, tested every week on a fresh machine: [docs/SETUP.md](docs/SETUP.md).
