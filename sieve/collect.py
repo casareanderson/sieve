@@ -138,6 +138,8 @@ def in_root(root, rel):
 
 
 RPM_FILE_TAGS = (1116, 1117, 1118, 1027)                     # DIRINDEXES, BASENAMES, DIRNAMES, OLDFILENAMES
+# for `sieve verify`: FILESTATES, FILEMODES, FILEDIGESTS, FILEFLAGS, FILEVERIFYFLAGS, FILEDIGESTALGO
+RPM_DIGEST_TAGS = (1029, 1030, 1035, 1037, 1045, 5011)
 
 
 def _rpm_strings(store, off, cnt):
@@ -151,9 +153,12 @@ def _rpm_strings(store, off, cnt):
     return out
 
 
-def rpm_header(blob, files=False):
+def rpm_header(blob, files=False, digests=False):
     """Header blob (index count, data length, 16-byte index entries, data store) → {name, version, …} or None.
-    files=True also returns the package's file paths under "files" (for the in-use check), from the same parse."""
+    files=True also returns the package's file paths under "files" (for the in-use check), from the same parse.
+    digests=True (implies files) adds "file_meta": per file, the columns `sieve verify` needs
+    {"digests", "algo", "flags", "states", "modes", "verifyflags"}, each a list as long as "files" (or None)."""
+    files = files or digests
     try:
         il, dl = struct.unpack_from(">II", blob, 0)
     except struct.error:
@@ -164,9 +169,11 @@ def rpm_header(blob, files=False):
     store, out, fl = blob[start:start + dl], {}, {}
     for k in range(il):
         tag, typ, off, cnt = struct.unpack_from(">IIII", blob, 8 + 16 * k)
-        if files and tag in RPM_FILE_TAGS and off < len(store) and cnt < 1000000:
+        if (files and tag in RPM_FILE_TAGS or digests and tag in RPM_DIGEST_TAGS) and off < len(store) and cnt < 1000000:
             fl[tag] = list(struct.unpack_from(f">{cnt}i", store, off)) if typ == 4 and off + 4 * cnt <= len(store) \
-                else _rpm_strings(store, off, cnt) if typ == 8 else None
+                else _rpm_strings(store, off, cnt) if typ == 8 \
+                else list(struct.unpack_from(f">{cnt}H", store, off)) if typ == 3 and off + 2 * cnt <= len(store) \
+                else list(store[off:off + cnt]) if typ in (1, 2) else None
         if tag not in RPM_TAGS or off >= len(store):
             continue
         if typ in (6, 8, 9):                                  # STRING, STRING_ARRAY, I18NSTRING: first string
@@ -178,6 +185,13 @@ def rpm_header(blob, files=False):
         idx, base, dirs = fl.get(1116), fl.get(1117), fl.get(1118)
         out["files"] = [dirs[i] + b for i, b in zip(idx, base) if 0 <= i < len(dirs)] \
             if idx and base and dirs and len(idx) == len(base) else list(fl.get(1027) or [])
+    if digests:
+        n = len(out["files"])
+        col = lambda tag: fl.get(tag) if fl.get(tag) is not None and len(fl[tag]) == n else None  # noqa: E731
+        algo = (fl.get(5011) or [1])[0]
+        out["file_meta"] = {"digests": col(1035), "algo": {1: "md5", 2: "sha1", 8: "sha256", 9: "sha384",
+                                                           10: "sha512"}.get(algo), "flags": col(1037),
+                            "states": col(1029), "modes": col(1030), "verifyflags": col(1045)}
     return out if out.get("name") and out.get("version") else None
 
 
@@ -265,10 +279,11 @@ def _rpm_bdb(data):
     return out
 
 
-def rpm_packages(root="/", files=None):
+def rpm_packages(root="/", files=None, details=None):
     """→ (format, ["name\\tepoch\\tversion\\trelease\\tarch\\tsourcerpm", …], error). ([], None) when there is no
     rpm database at all; an unreadable one is an error, never an empty list. Pass a dict as `files` to also get
-    {path: package name} for the in-use check, from the same read."""
+    {path: package name} for the in-use check, from the same read. Pass a list as `details` to get each package's
+    parsed header with its file digests and flags (rpm_header(digests=True)) for `sieve verify`."""
     for rel in RPM_DBS:
         path = in_root(root, rel)
         if not path or not os.path.isfile(path) or os.path.getsize(path) == 0:
@@ -284,7 +299,9 @@ def rpm_packages(root="/", files=None):
             return "?", [], f"unsupported or unreadable rpm database {rel}: {type(e).__name__}: {e}"
         rows = set()
         for b in blobs:
-            h = rpm_header(b, files=files is not None)
+            h = rpm_header(b, files=files is not None, digests=details is not None)
+            if h and details is not None and h["name"] != "gpg-pubkey":
+                details.append(dict(h))
             if h and files is not None and h["name"] != "gpg-pubkey":
                 files.update(dict.fromkeys(h.pop("files"), h["name"]))
             if h and h["name"] != "gpg-pubkey":

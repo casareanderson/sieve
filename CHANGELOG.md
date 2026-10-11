@@ -40,6 +40,22 @@
   image. Without root it reports how many processes it could read and never says `no`. rpm file lists come from
   the same rpmdb read as the package list.
 
+### Verify
+
+- `sieve verify`: has any installed file changed since its package manager put it there? Re-hashes files against
+  the checksums already on disk: dpkg md5sums, the apk database (SHA-1), the rpm database's file digests (from the
+  same header parse the CVE scan uses) and pip RECORD files (SHA-256). No binary, no download, no root for the host.
+  `--root DIR`, `--containers [--host]` (running containers read in place, mount points skipped, absolute symlinks
+  kept inside the container), `--packages`, `--include-config`, `--all-missing`, `--json`, `--sarif`.
+- Security-critical paths (system binaries, PAM, sshd, sudo, libc, the loader) are marked ⚠ and are SARIF `error`.
+- Skipped by design, the way the package managers themselves skip them: conffiles / `%config`, dpkg `path-exclude`,
+  rpm files that were never installed or are marked `%verify(not md5)`, and Debian's `/usr`-merge diversions.
+  Docs, man pages and translations deleted by minimal images are counted as trimmed, not listed.
+- A changed pip file that matches another installed distribution's RECORD is reported as "now X's file" (two
+  distributions sharing one folder, e.g. PyJWT and jwt).
+- Exit code 1 when a file changed; missing files are reported but don't fail the run. npm is documented as
+  uncheckable: it keeps no per-file checksums.
+
 ### Output
 
 - Known-malicious findings show as `☠ MALWARE`; the table's first column is now `ALERT`. In `--json` each finding
