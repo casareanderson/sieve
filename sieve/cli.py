@@ -5,9 +5,9 @@ import os
 import sys
 from datetime import datetime, timezone
 
-from . import __version__, intel, osv, rank, sources
+from . import __version__, intel, osv, projects, rank, sources
 
-EXIT_OK, EXIT_KEV, EXIT_ERROR = 0, 1, 2
+EXIT_OK, EXIT_KEV, EXIT_ERROR = 0, 1, 2          # 1 = known-exploited (KEV) or known-malicious in the output
 
 
 def default_cache():
@@ -36,7 +36,7 @@ def parser():
                         help="also check kernel packages (linux-image, linux-libc-dev, ...); skipped by default")
     common.add_argument("--limit", type=int, default=50, metavar="N",
                         help="table rows to print (default 50, 0 = all); the summary always counts everything")
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,collector}")
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,collector}")
     root = argparse.ArgumentParser(add_help=False)
     root.add_argument("--root", default="/", metavar="PATH",
                       help="read the host's packages from this directory instead of / (e.g. the host's / "
@@ -46,6 +46,10 @@ def parser():
     c.add_argument("--from-tar", metavar="FILE",
                    help="read a tar written by `sieve collector` on another machine ('-' = stdin) instead")
     sub.add_parser("all", parents=[common, root], help="host + containers")
+    pa = sub.add_parser("path", parents=[common], help="scan project directories: npm/yarn/pnpm lockfiles, "
+                        "node_modules, requirements*.txt, poetry.lock, uv.lock, virtualenvs")
+    pa.add_argument("dirs", nargs="+", metavar="DIR")
+    pa.add_argument("--depth", type=int, default=8, metavar="N", help="how deep to look under each DIR (default 8)")
     sub.add_parser("collector", help="print the standalone collector script (pipe it to `python3 -` elsewhere)")
     return p
 
@@ -73,6 +77,9 @@ def scan(args, warn):
 
     if args.cmd in ("host", "all"):
         run(sources.host(root=args.root, kernel=args.kernel))
+    if args.cmd == "path":
+        for d in args.dirs:
+            run(projects.scan_path(d, depth=args.depth))
     if args.cmd in ("containers", "all"):
         proc = None
         try:
@@ -111,12 +118,13 @@ def _cut(s, n):
 
 
 def table(findings, limit):
-    rows = [("KEV", "EPSS", "SEVERITY", "ID", "PACKAGE", "INSTALLED → FIXED", "TARGET")]
+    rows = [("ALERT", "EPSS", "SEVERITY", "ID", "PACKAGE", "INSTALLED → FIXED", "TARGET")]
     shown = findings if not limit else findings[:limit]
     for f in shown:
         epss = f"{f['epss'] * 100:.1f}%" if f.get("epss") is not None else "-"
         fix = f["fixed"] or ("no fix" if f["status"] in ("affected", "fixed") else f["status"])
-        rows.append(("⚠" if f["kev"] else "", epss, f["severity"], f["id"], _cut(f["package"], 28),
+        flag = "☠ MALWARE" if f.get("malicious") else "⚠" if f["kev"] else ""
+        rows.append((flag, epss, f["severity"], f["id"], _cut(f["package"], 28),
                      f"{_cut(f['installed'], 26)} → {_cut(fix, 26)}", _cut(f["target"], 32)))
     w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     lines = ["  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip() for r in rows]
@@ -156,10 +164,13 @@ def main(argv=None):
             print(table(findings, args.limit))
         print()
         hidden = f" ({total - len(findings)} hidden by filters)" if total != len(findings) else ""
-        print(f"{s['findings']} findings, {s['kev']} actively exploited, {s['fixable']} fixable{hidden}")
+        n = s["malicious"]
+        mal = (f"{n} MALICIOUS PACKAGE{'S' if n != 1 else ''} (remove {'them' if n != 1 else 'it'}, rotate secrets), "
+               if n else "")
+        print(f"{mal}{s['findings']} findings, {s['kev']} actively exploited, {s['fixable']} fixable{hidden}")
     for e in errors:
         warn(e)
-    if s["kev"]:
+    if s["kev"] or s["malicious"]:
         return EXIT_KEV
     if errors or any(t.status == "error" for t in targets):
         return EXIT_ERROR

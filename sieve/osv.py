@@ -455,6 +455,8 @@ def slim(v):
            "severity": v.get("severity") or [], "references": refs, "affected": aff}
     if sev_db:
         out["database_specific"] = {"severity": sev_db}
+    if is_malicious(v):
+        out["malicious"] = True
     if v.get("withdrawn"):
         out["withdrawn"] = v["withdrawn"]
     return out
@@ -465,7 +467,16 @@ RPM_NOTICE = ("RHSA-", "RHBA-", "RHEA-", "ALSA-", "ALBA-", "ALEA-", "RLSA-", "RL
               "SUSE-SU-", "SUSE-RU-", "SUSE-FU-", "SUSE-OU-", "openSUSE-SU-", "openSUSE-RU-")
 RPM_SECURITY = ("RHSA-", "ALSA-", "RLSA-", "SUSE-SU-", "openSUSE-SU-")
 NOTICE = ("USN-", "DSA-", "DLA-", "DTSA-") + RPM_NOTICE
-CACHE_SCHEMA = 3                        # bump when slim() keeps more fields, so old cached bodies are refetched
+CACHE_SCHEMA = 4                        # bump when slim() keeps more fields, so old cached bodies are refetched
+# 3 was used twice (rpm: AlmaLinux related CVEs; malicious flag), so any v3 cache is refetched once
+
+
+def is_malicious(v):
+    """A known-malicious package, not a bug: OpenSSF's malicious-packages feed (MAL-*) or a GitHub advisory filed
+    as CWE-506, embedded malicious code. flatmap-stream 0.1.1 (the event-stream backdoor) has both."""
+    if v.get("malicious") or str(v.get("id", "")).startswith("MAL-"):
+        return True
+    return "CWE-506" in ((v.get("database_specific") or {}).get("cwe_ids") or [])
 
 
 def _notice_cves(b):
@@ -669,8 +680,24 @@ def _url(v):
 
 def _row(vid, rn, rv, fixed, sev, b, kev, status, target, url):
     return {"id": vid, "package": rn, "installed": rv, "fixed": fixed, "severity": sev,
-            "summary": (b.get("summary") or "")[:200], "kev": vid in kev, "status": status, "target": target,
-            "details": (b.get("details") or "")[:1200], "url": url}
+            "summary": (b.get("summary") or "")[:200], "kev": vid in kev, "malicious": bool(b.get("malicious")),
+            "status": status, "target": target, "details": (b.get("details") or "")[:1200], "url": url}
+
+
+def _one_malware_row(out):
+    """A malicious package usually has several records (MAL-*, one or two GHSA): one row per package and target,
+    the MAL- id preferred, the others listed in `related`. An upgrade doesn't fix malware, so there is no fix."""
+    groups = {}
+    for key, r in out.items():
+        if r["malicious"]:
+            groups.setdefault((r["package"], r["target"]), []).append(key)
+    for keys in groups.values():
+        keys.sort(key=lambda k: (not out[k]["id"].startswith("MAL-"), out[k]["id"]))
+        keep = out[keys[0]]
+        keep.update(severity="CRITICAL", fixed="", status="malicious: remove it",
+                    related=[out[k]["id"] for k in keys[1:]])
+        for k in keys[1:]:
+            del out[k]
 
 
 def match(osv, pkgs, kev, target="", alias_sev=True):
@@ -794,6 +821,7 @@ def match(osv, pkgs, kev, target="", alias_sev=True):
             b = bodies.get(c) or bodies.get("UBUNTU-" + c) or bodies.get("DEBIAN-" + c) or {}
             out[key] = _row(c, rn, rv, fv, borrowed(c), b, kev, "fixed", target,
                             f"https://security.alpinelinux.org/vuln/{c}")
+    _one_malware_row(out)
     return list(out.values())
 
 

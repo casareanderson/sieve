@@ -1,6 +1,7 @@
 """Where package lists come from: the local machine, or the running containers on it."""
 import glob
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,8 @@ from . import osv
 from .collect import rpm_packages          # standard library only, shared with the standalone collector
 
 COLLECTOR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "collect.py")
+NPM_DIRS = ["usr/lib/node_modules", "usr/local/lib/node_modules"]
+NPMRC = ["etc/npmrc", "usr/etc/npmrc", "usr/local/etc/npmrc", "root/.npmrc"]
 PY_DIRS = ["usr/lib/python3*/site-packages", "usr/lib/python3*/dist-packages", "usr/lib/python3/dist-packages",
            "usr/lib64/python3*/site-packages", "usr/local/lib/python3*/site-packages",
            "usr/local/lib/python3*/dist-packages"]
@@ -79,9 +82,9 @@ def _os_owned(root, apk_db):
 
 
 def rpm_owned(path):
-    """On rpm distros pip installs into /usr/local (Fedora 27+, EL8+); a dist-info under /usr/lib*/python3* came with
-    an rpm, whose advisories already cover it."""
-    return path.startswith(("/usr/lib/python", "/usr/lib64/python"))
+    """On rpm distros pip and `npm -g` install into /usr/local (Fedora 27+, EL8+); a dist-info under /usr/lib*/python3*
+    or a package under /usr/lib/node_modules came with an rpm, whose advisories already cover it."""
+    return path.startswith(("/usr/lib/python", "/usr/lib64/python", "/usr/lib/node_modules/"))
 
 
 def rpm_list(root="/"):
@@ -98,6 +101,37 @@ def rpm_list(root="/"):
         except (OSError, subprocess.SubprocessError):
             pass
     return "\n".join(rows), err
+
+
+def npm_global(root="/"):
+    """Globally installed npm packages → [(name, version, path)]: the usual global prefixes plus any `prefix=` set in
+    an npmrc. Read straight from package.json, so node doesn't need to be installed (or trusted) to scan it."""
+    dirs = list(NPM_DIRS)
+    for rc in NPMRC:
+        m = re.search(r"^\s*prefix\s*=\s*(\S+)", _read(os.path.join(root, rc)) or "", re.M)
+        if m and m.group(1).startswith("/"):
+            dirs.append(m.group(1).lstrip("/") + "/lib/node_modules")
+    from .projects import node_modules
+    out, seen = [], set()
+    for d in dirs:
+        full = os.path.join(root, d)
+        real = os.path.realpath(full)
+        if real in seen or not os.path.isdir(full):
+            continue
+        seen.add(real)
+        out += [(n, v, "/" + os.path.relpath(p, root)) for n, v, p in node_modules(full, with_path=True)]
+    return out
+
+
+def _npm_owned(root):
+    """Top-level global npm packages that dpkg installed (Debian's `npm` package ships some): its advisories cover them."""
+    owned = set()
+    for lst in glob.glob(os.path.join(root, "var/lib/dpkg/info/*.list")):
+        for line in (_read(lst) or "").splitlines():
+            m = re.match(r"^(.*/node_modules/(?:@[^/]+/)?[^/@]+)$", line.strip())
+            if m and any(m.group(1).startswith("/" + d + "/") for d in NPM_DIRS):
+                owned.add(m.group(1))
+    return owned
 
 
 def python_packages(root="/"):
@@ -119,7 +153,8 @@ def python_packages(root="/"):
 
 
 def host(root="/", kernel=False):
-    """The local machine: OS packages from dpkg/apk/rpm plus Python packages pip installed outside the OS."""
+    """The local machine: OS packages from dpkg/apk/rpm, Python packages pip installed outside the OS, and global
+    npm packages."""
     t = Target("host", "host")
     files = {}
     for rel in ("etc/os-release", "usr/lib/os-release", "etc/alpine-release", "var/lib/dpkg/status",
@@ -148,8 +183,14 @@ def host(root="/", kernel=False):
     owned = _os_owned(root, files.get("lib/apk/db/installed"))
     py = [p for p in python_packages(root) if p[2] not in owned and not (rpm and rpm_owned(p[2]))]
     pkgs += [("PyPI", n, v, n, v) for n, v, _ in py]
+    npm_owned = _npm_owned(root)
+    npm = [p for p in npm_global(root) if p[2] not in npm_owned and not any(p[2].startswith(o + "/") for o in npm_owned)
+           and not (rpm and rpm_owned(p[2]))]
+    if npm:
+        t.notes.append(f"{len(npm)} global npm packages")
+    pkgs += [("npm", n, v, n, v) for n, v, _ in npm]
     t.pkgs = sorted(set(pkgs))
-    t.packages = len(entries) + len(py)
+    t.packages = len(entries) + len(py) + len(npm)
     return t
 
 
@@ -185,7 +226,7 @@ def image_target(name, files, kernel=False):
         kind = k.split("/", 1)[0]
         body = v.split(b"\n", 1)[1] if b"\n" in v else b""
         if kind in ("py", "npm"):                       # the collector already reduced these to name\nversion
-            if kind == "py" and text.get("rpm") and rpm_owned(v.split(b"\n", 1)[0].decode("utf-8", "replace")):
+            if text.get("rpm") and rpm_owned(v.split(b"\n", 1)[0].decode("utf-8", "replace")):
                 continue                                # came with an rpm: its advisories cover it
             nv = body.decode("utf-8", "replace").split("\n")
             if len(nv) == 2 and nv[0] and nv[1]:
