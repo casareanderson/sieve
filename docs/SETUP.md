@@ -180,7 +180,7 @@ The full list of inputs and outputs is in the [README](../README.md#use-it-in-ci
 | `no KEV data: known-exploited findings cannot be flagged` | no KEV copy at all yet | fix the network, then run again |
 | `EPSS refresh failed` / `EPSS cache unreadable` | couldn't get EPSS scores | use `--no-epss`, or delete the cache folder |
 | `<os>: OSV has no advisory feed for this OS; OS packages not checked` | Fedora, RHEL, Arch and friends | only language packages are checked on these |
-| `no dpkg or apk package database found` | wrong `--root`, or a distro sieve doesn't read | point `--root` at the real `/` |
+| `no dpkg, apk or rpm package database found` | wrong `--root`, or a distro sieve doesn't read | point `--root` at the real `/` |
 | `N kernel packages skipped` | normal; containers run the host kernel | add `--kernel` on a real host if you want them |
 | `sieve: no running containers found` | no containers running, or not run as root | start them, or run with `sudo` |
 | `collector exited 1: ...` | the collector couldn't read Docker | run it as root on the Docker host |

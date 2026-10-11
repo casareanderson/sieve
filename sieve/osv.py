@@ -4,8 +4,9 @@ Why OSV: Debian, Ubuntu, Alpine, the GitHub advisory database, PyPA, the Go team
 directly. sieve reads the package lists a box already has and asks OSV which advisories affect those exact
 versions. There is no scanner binary and no vulnerability database to download, verify or keep patched.
 
-  parse_*()      package lists from files a box or image already has (dpkg, apk, PyPI, npm, Go build info, Rust)
-  ecosystem()    OSV ecosystem name for an os-release (Debian:12, Ubuntu:24.04:LTS, Alpine:v3.20)
+  parse_*()      package lists from files a box or image already has (dpkg, apk, rpm, PyPI, npm, Go, Rust)
+  ecosystem()    OSV ecosystem name for an os-release (Debian:12, Ubuntu:24.04:LTS, Alpine:v3.20,
+                 AlmaLinux:9, Rocky Linux:9, Red Hat:enterprise_linux:9, openSUSE:Leap 15.6, openSUSE:Tumbleweed)
   match(pkgs)    findings as dicts: id, package, installed, fixed, severity, summary, kev, status, target, ...
 
 Advisory bodies are cached in a local SQLite file keyed by OSV's `modified` stamp, so a repeat scan only
@@ -29,7 +30,9 @@ UA = {"User-Agent": f"sieve/{__version__} (+https://github.com/casareanderson/si
 SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0}
 # Containers and LXC guests run the host's kernel, and Debian/Ubuntu kernel advisories are huge and numerous:
 # asking about these packages was most of a scan's memory peak and every answer was thrown away (warden, 2026-10-10).
-KERNEL_PKG = re.compile(r"^linux-(libc-dev|headers|image|modules|tools|kbuild|source)")
+KERNEL_PKG = re.compile(r"^linux-(libc-dev|headers|image|modules|tools|kbuild|source)"
+                        r"|^kernel(-(core|modules|modules-core|modules-extra|headers|devel|tools|tools-libs|"
+                        r"default|default-base|default-devel|devel-headers|uki-virt))?$")
 
 
 # ── package lists ────────────────────────────────────────────────────────────
@@ -71,6 +74,32 @@ def parse_apk(text):
         elif len(line) > 2 and line[1] == ":":
             cur[line[0]] = line[2:]
     return out
+
+
+def _rpm_evr(epoch, version, release):
+    return (f"{epoch}:" if epoch and epoch != "0" else "") + version + (f"-{release}" if release else "")
+
+
+def parse_rpm(text):
+    """The collector's rpm list ("name\tepoch\tversion\trelease\tarch\tsourcerpm" per line) →
+    [(source, source_evr, binary, binary_evr)]. Versions are rpm EVR strings (`1:3.0.7-25.el9_3`, epoch only when
+    set), which is how AlmaLinux, Rocky, Red Hat and SUSE write their fixed versions in OSV."""
+    out = set()
+    for line in text.splitlines():
+        if not line or line.startswith("#"):
+            continue
+        f = (line.split("\t") + [""] * 6)[:6]
+        name, epoch, ver, rel, _arch, srpm = f
+        if not name or not ver:
+            continue
+        evr = _rpm_evr(epoch, ver, rel)
+        src, sevr = name, evr
+        base = re.sub(r"\.(no)?src\.rpm$", "", srpm)
+        parts = base.rsplit("-", 2)
+        if base != srpm and len(parts) == 3 and parts[0]:
+            src, sevr = parts[0], _rpm_evr(epoch, parts[1], parts[2])
+        out.add((src, sevr, name, evr))
+    return sorted(out)
 
 
 def parse_pymeta(text):
@@ -153,6 +182,10 @@ def kv(text):
     return {k: v.strip().strip('"') for k, _, v in (l.partition("=") for l in text.splitlines()) if _}
 
 
+RPM_ID = {"almalinux": "AlmaLinux:{major}", "rocky": "Rocky Linux:{major}", "rhel": "Red Hat:enterprise_linux:{major}"}
+RPM_ECO = ("AlmaLinux:", "Rocky Linux:", "Red Hat:", "openSUSE:")
+
+
 def ecosystem(osr, alpine_release=""):
     """os-release dict → (OSV ecosystem, label). None when OSV has no feed for it."""
     ident, ver = osr.get("ID", ""), osr.get("VERSION_ID", "")
@@ -168,6 +201,15 @@ def ecosystem(osr, alpine_release=""):
     if ident == "alpine":
         v = ".".join((alpine_release or ver).split(".")[:2])
         return f"Alpine:v{v}", f"alpine {alpine_release or ver}"
+    # RPM distros OSV has feeds for. Fedora, CentOS Stream, Oracle Linux and Amazon Linux have none (2026-10-11), and
+    # SUSE Linux Enterprise files fixes per module ("Basesystem 15 SP5"), which a host can't name reliably.
+    major = ver.split(".")[0]
+    if ident in RPM_ID and major.isdigit():
+        return RPM_ID[ident].format(major=major), f"{ident} {ver}"
+    if ident == "opensuse-leap" and ver:
+        return f"openSUSE:Leap {ver}", f"opensuse-leap {ver}"
+    if ident == "opensuse-tumbleweed":
+        return "openSUSE:Tumbleweed", f"opensuse-tumbleweed {ver}".strip()
     return None, f"{ident or 'unknown'} {ver}".strip()
 
 
@@ -237,6 +279,75 @@ def apk_cmp(a, b):
     return (ka > kb) - (ka < kb)
 
 
+def _alnum(c):
+    return c.isascii() and c.isalnum()
+
+
+def rpmvercmp(a, b):
+    """rpm's own segment comparison: digits vs letters, leading zeros ignored, a numeric segment beats an alpha one,
+    `~` sorts before anything (1.0~rc1 < 1.0) and `^` after the base but before any further segment."""
+    if a == b:
+        return 0
+    i = j = 0
+    while i < len(a) or j < len(b):
+        while i < len(a) and not _alnum(a[i]) and a[i] not in "~^":
+            i += 1
+        while j < len(b) and not _alnum(b[j]) and b[j] not in "~^":
+            j += 1
+        if (i < len(a) and a[i] == "~") or (j < len(b) and b[j] == "~"):
+            if i >= len(a) or a[i] != "~":
+                return 1
+            if j >= len(b) or b[j] != "~":
+                return -1
+            i, j = i + 1, j + 1
+            continue
+        if (i < len(a) and a[i] == "^") or (j < len(b) and b[j] == "^"):
+            if i >= len(a):
+                return -1
+            if j >= len(b):
+                return 1
+            if a[i] != "^":
+                return 1
+            if b[j] != "^":
+                return -1
+            i, j = i + 1, j + 1
+            continue
+        if i >= len(a) or j >= len(b):
+            break
+        num = a[i].isdigit()
+        same = (lambda c: c.isascii() and c.isdigit()) if num else (lambda c: c.isascii() and c.isalpha())
+        si, sj = i, j
+        while i < len(a) and same(a[i]):
+            i += 1
+        while j < len(b) and same(b[j]):
+            j += 1
+        x, y = a[si:i], b[sj:j]
+        if not y:
+            return 1 if num else -1
+        if num:
+            x, y = x.lstrip("0"), y.lstrip("0")
+            if len(x) != len(y):
+                return 1 if len(x) > len(y) else -1
+        if x != y:
+            return 1 if x > y else -1
+    if i >= len(a) and j >= len(b):
+        return 0
+    return -1 if i >= len(a) else 1
+
+
+def rpm_cmp(a, b):
+    """epoch:version-release, compared the way rpm does (a missing epoch is 0; release only when both have one)."""
+    def split(v):
+        e, _, rest = v.partition(":") if ":" in v else ("0", "", v)
+        ver, _, rel = rest.rpartition("-") if "-" in rest else (rest, "", "")
+        return int(e or 0) if e.isdigit() else 0, ver, rel
+    ea, va, ra = split(a)
+    eb, vb, rb = split(b)
+    if ea != eb:
+        return -1 if ea < eb else 1
+    return rpmvercmp(va, vb) or (rpmvercmp(ra, rb) if ra and rb else 0)
+
+
 _PRE = re.compile(r"(?i)^[-._]?(alpha|beta|preview|pre|dev|rc|a|b|c)[-._]?(\d*)")
 _POST = re.compile(r"(?i)^[-._]?(post|rev|p|r)[-._]?(\d*)")
 
@@ -270,6 +381,8 @@ def vcmp(eco, a, b):
     try:
         if eco.startswith(("Debian", "Ubuntu")):
             return deb_cmp(a, b)
+        if eco.startswith(RPM_ECO):
+            return rpm_cmp(a, b)
         return apk_cmp(a, b) if eco.startswith("Alpine") else gen_cmp(a, b)
     except Exception:  # noqa: BLE001
         return 0
@@ -309,6 +422,9 @@ def severity(v):
             u = s.get("score", "").lower()
             return {"critical": "CRITICAL", "high": "HIGH", "medium": "MEDIUM", "low": "LOW",
                     "negligible": "LOW"}.get(u, "UNKNOWN")
+    m = re.match(r"(Critical|Important|Moderate|Low):", v.get("summary") or "")   # RHSA/ALSA/RLSA: Red Hat's rating
+    if m:
+        return {"Critical": "CRITICAL", "Important": "HIGH", "Moderate": "MEDIUM", "Low": "LOW"}[m.group(1)]
     g = (v.get("database_specific") or {}).get("severity")
     if isinstance(g, str) and g.upper() in ("LOW", "MODERATE", "MEDIUM", "HIGH", "CRITICAL"):
         return "MEDIUM" if g.upper() == "MODERATE" else g.upper()
@@ -335,6 +451,7 @@ def slim(v):
     out = {"id": v["id"], "modified": v.get("modified", ""), "summary": (v.get("summary") or "")[:200],
            "details": (v.get("details") or "")[:1200], "aliases": v.get("aliases") or [],
            "upstream": [u for u in v.get("upstream") or [] if u.startswith("CVE-")],
+           "related": [u for u in v.get("related") or [] if u.startswith("CVE-")],
            "severity": v.get("severity") or [], "references": refs, "affected": aff}
     if sev_db:
         out["database_specific"] = {"severity": sev_db}
@@ -343,12 +460,17 @@ def slim(v):
     return out
 
 
-NOTICE = ("USN-", "DSA-", "DLA-", "DTSA-")
-CACHE_SCHEMA = 2                        # bump when slim() keeps more fields, so old cached bodies are refetched
+# RPM distros publish only advisories (errata), each listing its CVEs: expanded like USN/DSA notices below.
+RPM_NOTICE = ("RHSA-", "RHBA-", "RHEA-", "ALSA-", "ALBA-", "ALEA-", "RLSA-", "RLBA-", "RLEA-",
+              "SUSE-SU-", "SUSE-RU-", "SUSE-FU-", "SUSE-OU-", "openSUSE-SU-", "openSUSE-RU-")
+RPM_SECURITY = ("RHSA-", "ALSA-", "RLSA-", "SUSE-SU-", "openSUSE-SU-")
+NOTICE = ("USN-", "DSA-", "DLA-", "DTSA-") + RPM_NOTICE
+CACHE_SCHEMA = 3                        # bump when slim() keeps more fields, so old cached bodies are refetched
 
 
 def _notice_cves(b):
-    return sorted({c for c in (b.get("upstream") or []) + (b.get("aliases") or []) if c.startswith("CVE-")})
+    return sorted({c for c in (b.get("upstream") or []) + (b.get("aliases") or []) + (b.get("related") or [])
+                   if c.startswith("CVE-")})
 
 
 class OSV:
@@ -527,6 +649,17 @@ def _fixed(v, eco, name, installed):
     return best
 
 
+_GA_MEDIA = re.compile(r"^(\S+)-([^-\s]+-[^-\s]+) on GA media$")
+
+
+def _stale_ga(b, eco, name, installed):
+    """openSUSE's "<pkg>-<version> on GA media" records name the fixed build in their title, and some carry a wrong
+    fixed event: openSUSE-SU-2024:10106-1 is "bash-4.4-92.1 on GA media" with fixed 7.0-92.1, which flagged
+    Tumbleweed's bash 5.3 with 2014's Shellshock (2026-10-11). Already at or past the title's build = not affected."""
+    m = _GA_MEDIA.match(b.get("summary") or "")
+    return bool(m and b["id"].startswith("openSUSE-SU-") and m.group(1) == name and vcmp(eco, m.group(2), installed) <= 0)
+
+
 def _url(v):
     for r in v.get("references") or []:
         if r.get("type") == "ADVISORY":
@@ -585,7 +718,7 @@ def match(osv, pkgs, kev, target="", alias_sev=True):
                     if a not in bodies:
                         extra[a] = ""
         for b in list(bodies.values()):
-            if b["id"].startswith(NOTICE):
+            if b["id"].startswith(NOTICE) and not (b["id"].startswith(RPM_NOTICE) and severity(b) != "UNKNOWN"):
                 for c in _notice_cves(b):
                     for a in chain(c):
                         if a not in bodies:
@@ -633,18 +766,23 @@ def match(osv, pkgs, kev, target="", alias_sev=True):
     # into its CVEs, for any CVE a per-CVE record has not already reported for this package.
     for e, n, v, rn, rv in pkgs:
         for b in by_q.get((e, n, v), []):
-            if b.get("withdrawn") or not b["id"].startswith(NOTICE):
+            if b.get("withdrawn") or not b["id"].startswith(NOTICE) or _stale_ga(b, e, n, v):
                 continue
             fixed = _fixed(b, e, n, v)
             status = "fixed" if fixed else "affected"
             if fixed and e.startswith("Ubuntu") and "esm" in fixed:
                 fixed, status = "", "fix needs Ubuntu Pro (ESM)"
-            for c in _notice_cves(b):
+            own = severity(b) if b["id"].startswith(RPM_NOTICE) else "UNKNOWN"   # the distro's own rating
+            cves = _notice_cves(b)
+            if not cves and b["id"].startswith(RPM_SECURITY) and (b["id"], rn, target) not in out:
+                out[(b["id"], rn, target)] = _row(b["id"], rn, rv, fixed, own, b, kev, status, target, _url(b))
+            for c in cves:
                 if (c, rn, target) in out:
                     continue
                 cb = bodies.get(c) or {}
-                out[(c, rn, target)] = _row(c, rn, rv, fixed, borrowed(c), {"summary": cb.get("summary") or
-                                            b.get("summary"), "details": cb.get("details") or b.get("details")},
+                out[(c, rn, target)] = _row(c, rn, rv, fixed, own if own != "UNKNOWN" else borrowed(c),
+                                            {"summary": cb.get("summary") or b.get("summary"),
+                                             "details": cb.get("details") or b.get("details")},
                                             kev, status, target, _url(b))
     for e, n, v, rn, rv in pkgs:
         for c, fv in sec.get((e, n, v), {}).items():
@@ -660,5 +798,16 @@ def match(osv, pkgs, kev, target="", alias_sev=True):
 
 
 def os_packages(eco, entries):
-    """dpkg/apk entries → match() input: query the source package, report each binary."""
-    return [(eco, src, sver, b, bver) for src, sver, b, bver in entries]
+    """dpkg/apk/rpm entries → match() input: query the source package, report each binary.
+    RPM feeds differ in what they index (Rocky: source packages; AlmaLinux and Red Hat: binaries; openSUSE: source),
+    so rpm packages are asked about under both names. Red Hat splits RHEL into BaseOS and AppStream ecosystems."""
+    if not eco.startswith(RPM_ECO):
+        return [(eco, src, sver, b, bver) for src, sver, b, bver in entries]
+    ecos = [eco + "::baseos", eco + "::appstream"] if eco.startswith("Red Hat:") else [eco]
+    out = []
+    for src, sver, b, bver in entries:
+        for e in ecos:
+            out.append((e, b, bver, b, bver))
+            if src != b:
+                out.append((e, src, sver, b, bver))
+    return out
