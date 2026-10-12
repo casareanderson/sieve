@@ -1,6 +1,6 @@
 {
  "errors": [],
- "generated": "2026-10-10 22:14 UTC",
+ "generated": "2026-10-12 13:17 UTC",
  "images": [
   {
    "comparison": {
@@ -65,22 +65,26 @@
    "ref": "debian:10.13-slim@sha256:bb3dc79fddbca7e8903248ab916bb775c96ec61014b3d02b4f06043b604726dc",
    "runs": {
     "grype": {
-     "peak_kb": 238168,
+     "peak_kb": 208876,
      "rc": 0,
-     "seconds": 2.2187786500000186
+     "seconds": 2.208031159000001
     },
     "osv-scanner": {
-     "peak_kb": 70028,
+     "peak_kb": 68088,
      "rc": 1,
-     "seconds": 0.971133736000013
+     "seconds": 0.9891934489999983
     },
     "trivy": {
-     "peak_kb": 138136,
+     "peak_kb": 136524,
      "rc": 0,
-     "seconds": 0.20925168600001598
+     "seconds": 0.20304553599999053
     }
    },
    "sieve_target": {
+    "in_use": {
+     "processes": 1,
+     "processes_read": 1
+    },
     "kind": "container",
     "name": "sievebench/debian-10.13-slim:pinned",
     "notes": [],
@@ -309,22 +313,26 @@
    "ref": "debian:11.6-slim@sha256:9404b05bd09b57c76eccc0c5505b3c88b5feccac808d9b193a4fbac87bb44745",
    "runs": {
     "grype": {
-     "peak_kb": 248808,
+     "peak_kb": 213044,
      "rc": 0,
-     "seconds": 2.7720843470000034
+     "seconds": 2.759405158000021
     },
     "osv-scanner": {
      "peak_kb": 71196,
      "rc": 1,
-     "seconds": 1.0309622460000014
+     "seconds": 1.1918508220000206
     },
     "trivy": {
-     "peak_kb": 158136,
+     "peak_kb": 163864,
      "rc": 0,
-     "seconds": 0.23753920499999026
+     "seconds": 0.2285747210000011
     }
    },
    "sieve_target": {
+    "in_use": {
+     "processes": 1,
+     "processes_read": 1
+    },
     "kind": "container",
     "name": "sievebench/debian-11.6-slim:pinned",
     "notes": [],
@@ -387,22 +395,26 @@
    "ref": "debian:12.0-slim@sha256:9bd077d2f77c754f4f7f5ee9e6ded9ff1dff92c6dce877754da21b917c122c77",
    "runs": {
     "grype": {
-     "peak_kb": 243188,
+     "peak_kb": 219492,
      "rc": 0,
-     "seconds": 2.530756793999984
+     "seconds": 2.5252398449999873
     },
     "osv-scanner": {
-     "peak_kb": 100920,
+     "peak_kb": 95372,
      "rc": 1,
-     "seconds": 1.5298206330000141
+     "seconds": 1.3485496570000066
     },
     "trivy": {
-     "peak_kb": 152200,
+     "peak_kb": 155800,
      "rc": 0,
-     "seconds": 0.23010287899998616
+     "seconds": 0.2324632129999884
     }
    },
    "sieve_target": {
+    "in_use": {
+     "processes": 1,
+     "processes_read": 1
+    },
     "kind": "container",
     "name": "sievebench/debian-12.0-slim:pinned",
     "notes": [],
@@ -804,22 +816,26 @@
    "ref": "ubuntu:focal-20220426@sha256:47f14534bda344d9fe6ffd6effb95eefe579f4be0d508b7445cf77f61a0e5724",
    "runs": {
     "grype": {
-     "peak_kb": 231968,
+     "peak_kb": 228144,
      "rc": 0,
-     "seconds": 2.281963363000017
+     "seconds": 2.2767746319999844
     },
     "osv-scanner": {
-     "peak_kb": 301056,
+     "peak_kb": 348660,
      "rc": 1,
-     "seconds": 2.6397122799999977
+     "seconds": 2.975108333999998
     },
     "trivy": {
-     "peak_kb": 138188,
+     "peak_kb": 135424,
      "rc": 0,
-     "seconds": 0.18910993000000076
+     "seconds": 0.19312161799999217
     }
    },
    "sieve_target": {
+    "in_use": {
+     "processes": 1,
+     "processes_read": 1
+    },
     "kind": "container",
     "name": "sievebench/ubuntu-focal-20220426:pinned",
     "notes": [],
@@ -981,22 +997,26 @@
    "ref": "ubuntu:jammy-20220801@sha256:34fea4f31bf187bc915536831fd0afc9d214755bf700b5cdb1336c82516d154e",
    "runs": {
     "grype": {
-     "peak_kb": 202420,
+     "peak_kb": 231496,
      "rc": 0,
-     "seconds": 2.4786453399999857
+     "seconds": 2.425008240000011
     },
     "osv-scanner": {
-     "peak_kb": 461396,
+     "peak_kb": 460520,
      "rc": 1,
-     "seconds": 3.3916078310000444
+     "seconds": 3.1612620699999923
     },
     "trivy": {
-     "peak_kb": 160064,
+     "peak_kb": 154100,
      "rc": 0,
-     "seconds": 0.2254888850000043
+     "seconds": 0.32840231400001585
     }
    },
    "sieve_target": {
+    "in_use": {
+     "processes": 1,
+     "processes_read": 1
+    },
     "kind": "container",
     "name": "sievebench/ubuntu-jammy-20220801:pinned",
     "notes": [],
@@ -1045,22 +1065,26 @@
    "ref": "alpine:3.18.0@sha256:02bb6f428431fbc2809c5d1b41eab5a68350194fb508869a33cb1af4444c9b11",
    "runs": {
     "grype": {
-     "peak_kb": 217264,
+     "peak_kb": 220348,
      "rc": 0,
-     "seconds": 2.3118918920000056
+     "seconds": 2.2545897769999783
     },
     "osv-scanner": {
-     "peak_kb": 70088,
+     "peak_kb": 68900,
      "rc": 1,
-     "seconds": 0.7932864979999863
+     "seconds": 0.831388947999983
     },
     "trivy": {
-     "peak_kb": 134876,
+     "peak_kb": 128676,
      "rc": 0,
-     "seconds": 0.08700955099999419
+     "seconds": 0.07749902400001929
     }
    },
    "sieve_target": {
+    "in_use": {
+     "processes": 1,
+     "processes_read": 1
+    },
     "kind": "container",
     "name": "sievebench/alpine-3.18.0:pinned",
     "notes": [],
@@ -1167,22 +1191,26 @@
    "ref": "python:3.9.16-slim-buster@sha256:83c6f59ca894629d710ea03243819b8af63e1b074c5a1bdc96f2b8694163e65f",
    "runs": {
     "grype": {
-     "peak_kb": 291080,
+     "peak_kb": 287292,
      "rc": 0,
-     "seconds": 2.6802998590000016
+     "seconds": 2.640961884999996
     },
     "osv-scanner": {
-     "peak_kb": 91436,
+     "peak_kb": 90052,
      "rc": 1,
-     "seconds": 1.2689759120000303
+     "seconds": 1.7144540870000071
     },
     "trivy": {
-     "peak_kb": 141384,
+     "peak_kb": 143388,
      "rc": 0,
-     "seconds": 0.26347400300005575
+     "seconds": 0.2603606149999962
     }
    },
    "sieve_target": {
+    "in_use": {
+     "processes": 1,
+     "processes_read": 1
+    },
     "kind": "container",
     "name": "sievebench/python-3.9.16-slim-buster:pinned",
     "notes": [],
@@ -1331,22 +1359,26 @@
    "ref": "node:16.20.0-alpine3.17@sha256:01b4c77bab0eec8c12c15ca96d1da583ee61d3bd710432d6fa5d0bf9132ae5e0",
    "runs": {
     "grype": {
-     "peak_kb": 347616,
+     "peak_kb": 326628,
      "rc": 0,
-     "seconds": 5.239581477999991
+     "seconds": 4.741722064999976
     },
     "osv-scanner": {
-     "peak_kb": 77580,
+     "peak_kb": 74884,
      "rc": 1,
-     "seconds": 1.1857654350000075
+     "seconds": 0.8929133310000168
     },
     "trivy": {
-     "peak_kb": 333656,
+     "peak_kb": 319924,
      "rc": 0,
-     "seconds": 0.24586856000001944
+     "seconds": 0.2518966339999906
     }
    },
    "sieve_target": {
+    "in_use": {
+     "processes": 1,
+     "processes_read": 1
+    },
     "kind": "container",
     "name": "sievebench/node-16.20.0-alpine3.17:pinned",
     "notes": [],
@@ -1369,30 +1401,30 @@
  "tools": {
   "grype": {
    "command": "grype docker-archive:<image.tar> -o json",
-   "note": "DB update 77s",
-   "peak_kb": 347616,
-   "seconds": 22.514001723000007,
+   "note": "DB update 79s",
+   "peak_kb": 326628,
+   "seconds": 21.831732760999955,
    "version": "0.119.0"
   },
   "osv-scanner": {
    "command": "osv-scanner scan image --archive <image.tar> --format json --all-vulns",
    "note": "queries OSV.dev online, no local DB",
-   "peak_kb": 461396,
-   "seconds": 12.811264571000095,
+   "peak_kb": 460520,
+   "seconds": 13.104720698000023,
    "version": "2.6.0"
   },
   "sieve": {
    "command": "sieve containers --json --limit 0",
    "note": "queries OSV.dev online, cold cache; one run over all images",
-   "peak_kb": 109540,
-   "seconds": 14.309728718000002,
-   "version": "0.1.0"
+   "peak_kb": 109024,
+   "seconds": 19.278452119999997,
+   "version": "0.3.1"
   },
   "trivy": {
    "command": "trivy image --input <image.tar> --format json --list-all-pkgs --scanners vuln --skip-db-update --quiet",
-   "note": "DB download 5.1s",
-   "peak_kb": 333656,
-   "seconds": 1.6878446990000668,
+   "note": "DB download 5.6s",
+   "peak_kb": 319924,
+   "seconds": 1.7753636749999941,
    "version": "0.74.0"
   }
  },

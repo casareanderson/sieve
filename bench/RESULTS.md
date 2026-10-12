@@ -1,6 +1,6 @@
 # sieve benchmark results
 
-Generated 2026-10-10 22:14 UTC by [`bench/run.py`](run.py) on GitHub Actions (ubuntu24, 4 CPUs). This file is overwritten by the weekly [bench workflow](../.github/workflows/bench.yml); don't edit it by hand. Raw numbers: [`results.json`](results.json).
+Generated 2026-10-12 13:17 UTC by [`bench/run.py`](run.py) on GitHub Actions (ubuntu24, 4 CPUs). This file is overwritten by the weekly [bench workflow](../.github/workflows/bench.yml); don't edit it by hand. Raw numbers: [`results.json`](results.json).
 
 ## Summary
 
@@ -21,10 +21,10 @@ Generated 2026-10-10 22:14 UTC by [`bench/run.py`](run.py) on GitHub Actions (ub
 
 | tool | version | total scan time | peak memory | notes |
 |---|---|---|---|---|
-| sieve | 0.1.0 | 14s | 107 MB | queries OSV.dev online, cold cache; one run over all images |
-| trivy | 0.74.0 | 1.7s | 326 MB | DB download 5.1s |
-| grype | 0.119.0 | 23s | 339 MB | DB update 77s |
-| osv-scanner | 2.6.0 | 13s | 451 MB | queries OSV.dev online, no local DB |
+| sieve | 0.3.1 | 19s | 106 MB | queries OSV.dev online, cold cache; one run over all images |
+| trivy | 0.74.0 | 1.8s | 312 MB | DB download 5.6s |
+| grype | 0.119.0 | 22s | 319 MB | DB update 79s |
+| osv-scanner | 2.6.0 | 13s | 450 MB | queries OSV.dev online, no local DB |
 
 Peak memory is the largest per-image peak resident set size from `/usr/bin/time -v` (for sieve, the single run including its container collector).
 
