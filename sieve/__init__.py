@@ -1,2 +1,2 @@
 """sieve: find the CVEs that matter on a Linux box and its running containers."""
-__version__ = "0.3.1"
+__version__ = "0.4.0"

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-12)
 
 - `--new`: show only findings that are new since the last `--new` run of the same scan, plus what has gone (fixed or
   removed). The exit code follows the new findings only, for quiet daily cron jobs. One baseline per scan, next to the

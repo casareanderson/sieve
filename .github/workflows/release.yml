@@ -4,7 +4,7 @@ name: release
 #   project: sieve-scan | owner: casareanderson | repo: sieve | workflow: release.yml | environment: pypi
 on:
   push:
-    tags: ["v*"]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]     # release tags only: the moving Action tag (v1) is not a release
 permissions:
   contents: read
 jobs:
