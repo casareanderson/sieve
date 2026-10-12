@@ -57,6 +57,7 @@ Full step-by-step setup, tested every week on a fresh machine: [docs/SETUP.md](d
 
 ```
 pipx install sieve-scan        # on PyPI as `sieve-scan`; the command is `sieve`. (or: pipx install git+https://github.com/casareanderson/sieve)
+brew install casareanderson/tap/sieve   # Homebrew (macOS or Linux), same PyPI release
 ```
 
 Python 3.10 or newer. It also runs straight from a checkout: `python3 -m sieve host`.
