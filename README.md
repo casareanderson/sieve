@@ -528,6 +528,19 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
   `api.osv.dev`, `secdb.alpinelinux.org`, `www.cisa.gov` and `epss.empiricalsecurity.com`. Package names and
   versions are sent to OSV.dev; nothing else about the machine is.
 
+## The warden family
+
+Three tools, one job: knowing what's actually happening on your homelab. Each one runs on its own, and warden is
+the big brother that brings it all into one place.
+
+| Tool | Watches | Runs as |
+|---|---|---|
+| **[warden](https://github.com/casareanderson/warden)** | The whole estate: intrusions, bans, vulnerabilities, patches and AI agents, in one console you review and approve from | A server + web console |
+| **[sieve](https://github.com/casareanderson/sieve)** | Known vulnerabilities in packages, container images and lockfiles (OSV.dev + CISA KEV + EPSS) | A CLI or GitHub Action: `pipx install sieve-scan` |
+| **[ephor](https://github.com/casareanderson/ephor)** | What the AI agents on a Linux box connect to, download and can access | A dependency-free CLI that runs down to a Pi Zero |
+
+sieve and ephor both started life inside warden and were pulled out so you can use just the piece you need.
+
 ## Relationship to warden
 
 sieve is the scanner inside warden, on its own. warden adds the parts that need a server: scanning many machines
