@@ -91,6 +91,7 @@ sieve path DIR ...  # project directories: lockfiles, node_modules, requirements
 sieve verify        # has any installed file changed since its package manager put it there? (see Verify)
 sieve remote user@host   # another machine over ssh: what `sieve all` would find there, nothing installed there
 sieve sbom FILE ...      # scan SBOMs made by other tools (CycloneDX or SPDX JSON; see SBOM)
+sieve diff OLD.json NEW.json   # what is new in a saved --json report, and what has gone (see Only what's new)
 ```
 
 Options (for `host`, `containers`, `all`, `path`, `remote` and `sbom`):
@@ -109,12 +110,38 @@ Options (for `host`, `containers`, `all`, `path`, `remote` and `sbom`):
 | `--no-epss` | don't download or use EPSS scores |
 | `--kernel` | also check kernel packages (skipped by default, see Limits) |
 | `--root PATH` | `host` and `all`: read the host's packages from this directory instead of `/` (for example the host's `/` mounted at `/host` in a container) |
+| `--new` | only findings that are new since the last `--new` run of the same scan, plus what has gone since; the exit code follows the new findings only (see [Only what's new](#only-whats-new)) |
+| `--baseline FILE` | with `--new`: where to keep the last run, default next to the cache, one file per scan |
 | `--limit N` | table rows to print, default 50, `0` for all; the summary line always counts everything |
 | `--depth N` | `path`: how deep to look under each directory, default 8 |
 
 Exit codes: `1` if any known-malicious package or known-exploited (KEV) finding is in the output, `2` if part of
 the scan failed, otherwise `0`. Filters apply first, so `sieve all --fixable-only` in cron or CI fails only on KEV
 findings you can actually fix. A malicious package is never hidden by a filter.
+
+### Only what's new
+
+A daily job that prints the same 1,200 findings every morning gets ignored. `--new` keeps the last run of the same
+scan and shows only what has changed:
+
+```
+sieve host --new           # first run: everything is new, and it is saved as the baseline
+sieve host --new           # next day: only findings that weren't there yesterday, then what has gone
+```
+
+- A finding is the same finding while its target, package and advisory id match. Upgrading to a version that is
+  still vulnerable is not "new".
+- "Gone" means fixed or removed: the package was upgraded past the fix, or it is no longer there.
+- The exit code follows the new findings only, so `sieve all --new` in cron stays at `0` for a known-exploited CVE
+  you have already seen, and returns `1` the day a new one turns up.
+- Each scan keeps its own baseline (`host`, `path ~/a` and `path ~/b` don't mix), next to the cache. `--baseline FILE`
+  picks the file yourself.
+- If a scan has errors or a partial target, sieve keeps the old baseline and reports nothing as gone, because a
+  missing finding may only mean it couldn't look.
+
+To compare two reports you saved yourself (`sieve host --json > monday.json`), run
+`sieve diff monday.json tuesday.json`. It prints the new and the gone findings, or `--json`, and returns `1` if a
+new one is known-exploited or malicious.
 
 ### Project directories and malicious packages
 

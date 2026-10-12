@@ -41,6 +41,11 @@ def parser():
     common.add_argument("--no-epss", action="store_true", help="do not download or use EPSS scores")
     common.add_argument("--kernel", action="store_true",
                         help="also check kernel packages (linux-image, linux-libc-dev, ...); skipped by default")
+    common.add_argument("--new", action="store_true",
+                        help="only findings that are new since the last --new run of the same scan; also lists what has "
+                             "gone. The exit code follows the new findings only (for quiet daily cron jobs)")
+    common.add_argument("--baseline", metavar="FILE",
+                        help="with --new: where to keep the last run (default: next to the cache, one file per scan)")
     common.add_argument("--limit", type=int, default=50, metavar="N",
                         help="table rows to print (default 50, 0 = all); the summary always counts everything")
     sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,sbom,verify,remote,collector}")
@@ -85,6 +90,11 @@ def parser():
                         "full in-use picture; package lists alone don't")
     r.add_argument("--no-containers", action="store_true", help="host packages only")
     sub.add_parser("collector", help="print the standalone collector script (pipe it to `python3 -` elsewhere)")
+    d = sub.add_parser("diff", help="compare two saved `--json` reports: what is new in the second, what has gone")
+    d.add_argument("old_report", metavar="OLD.json")
+    d.add_argument("new_report", metavar="NEW.json")
+    d.add_argument("--json", action="store_true", help="machine-readable output")
+    d.add_argument("--limit", type=int, default=50, metavar="N", help="rows to print per list (default 50, 0 = all)")
     return p
 
 
@@ -239,8 +249,73 @@ def table(findings, limit):
     return "\n".join(lines)
 
 
+def brief(findings, limit):
+    """A short table for findings that may come from a saved report (fewer fields than a live scan)."""
+    rows = [("ALERT", "SEVERITY", "ID", "PACKAGE", "INSTALLED → FIXED", "TARGET")]
+    shown = findings if not limit else findings[:limit]
+    for f in shown:
+        flag = "☠ MALWARE" if f.get("malicious") else "⚠" if f.get("kev") else ""
+        rows.append((flag, f.get("severity") or "", f["id"], _cut(f["package"], 28),
+                     f"{_cut(f.get('installed') or '', 26)} → {_cut(f.get('fixed') or 'no fix', 26)}",
+                     _cut(f["target"], 32)))
+    w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
+    lines = ["  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip() for r in rows]
+    if limit and len(findings) > limit:
+        lines.append(f"… {len(findings) - limit} more (use --limit 0 to show all, or --json)")
+    return "\n".join(lines)
+
+
+def now_utc():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def new_since(args, targets, findings, errors, warn):
+    """--new: → (new findings, gone findings, baseline time or None). Saves this run as the next baseline when the
+    scan was complete; an incomplete scan keeps the old baseline and reports nothing as gone."""
+    from . import diff
+    path = diff.state_path(args)
+    base = diff.load(path)
+    complete = not errors and all(t.status == "ok" for t in targets)
+    if base is None:
+        new, gone = findings, []
+        warn(f"--new: no earlier run of this scan, so everything counts as new; baseline saved to {path}" if complete
+             else "--new: no earlier run of this scan, and this one was incomplete, so no baseline was saved yet")
+    else:
+        new, gone = diff.compare(base["findings"], findings)
+        if not complete:
+            warn("--new: this scan was incomplete, so the baseline is kept and nothing is reported as gone")
+            gone = []
+    if complete:
+        diff.save(path, findings, now_utc(), __version__)
+    return new, gone, (base or {}).get("generated")
+
+
+def diff_main(args):
+    from . import diff
+    try:
+        old_at, old = diff.report_findings(args.old_report)
+        new_at, new = diff.report_findings(args.new_report)
+    except (OSError, ValueError) as e:
+        print(f"sieve: {e}", file=sys.stderr)
+        return EXIT_ERROR
+    added, gone = diff.compare(old, new)
+    if args.json:
+        json.dump({"sieve": __version__, "old": old_at, "new": new_at, "new_findings": added, "gone": gone},
+                  sys.stdout, indent=1)
+        sys.stdout.write("\n")
+    else:
+        print(f"# {args.old_report} ({old_at or '?'}) → {args.new_report} ({new_at or '?'})")
+        for title, rows in ((f"{len(added)} new", added), (f"{len(gone)} gone (fixed or removed)", gone)):
+            print(f"\n{title}")
+            if rows:
+                print(brief(rows, args.limit))
+    return EXIT_KEV if any(f.get("kev") or f.get("malicious") for f in added) else EXIT_OK
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
+    if args.cmd == "diff":
+        return diff_main(args)
     if args.cmd == "collector":
         sys.stdout.write(sources.collector_source())
         return EXIT_OK
@@ -251,6 +326,13 @@ def main(argv=None):
     def warn(m):
         print(f"sieve: {m}", file=sys.stderr)
     targets, findings, errors = scan(args, warn)
+    gone, since = [], None
+    if args.new:
+        if args.sbom and not args.with_vulns:
+            warn("--new: an SBOM export has no findings to compare; ignored")
+            args.new = False
+        else:
+            findings, gone, since = new_since(args, targets, findings, errors, warn)
     total = len(findings)
     findings = rank.rank(rank.apply_filters(findings, args.min_severity, args.kev_only, args.fixable_only,
                                             args.in_use_only))
@@ -267,9 +349,12 @@ def main(argv=None):
         json.dump(sarif.build([t.as_dict() for t in targets], findings, errors), sys.stdout, indent=1)
         sys.stdout.write("\n")
     elif args.json:
-        json.dump({"sieve": __version__, "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                   "targets": [t.as_dict() for t in targets], "errors": errors,
-                   "summary": dict(s, unfiltered=total), "findings": findings}, sys.stdout, indent=1)
+        out = {"sieve": __version__, "generated": now_utc(),
+               "targets": [t.as_dict() for t in targets], "errors": errors,
+               "summary": dict(s, unfiltered=total), "findings": findings}
+        if args.new:
+            out["new_since"] = {"baseline": since, "gone": gone}
+        json.dump(out, sys.stdout, indent=1)
         sys.stdout.write("\n")
     else:
         for t in targets:
@@ -284,7 +369,12 @@ def main(argv=None):
         n = s["malicious"]
         mal = (f"{n} MALICIOUS PACKAGE{'S' if n != 1 else ''} (remove {'them' if n != 1 else 'it'}, rotate secrets), "
                if n else "")
-        print(f"{mal}{s['findings']} findings, {s['kev']} actively exploited, {s['fixable']} fixable{hidden}")
+        what = (f"new findings since {since}" if since else "findings (first --new run: all new)") if args.new \
+            else "findings"
+        print(f"{mal}{s['findings']} {what}, {s['kev']} actively exploited, {s['fixable']} fixable{hidden}")
+        if gone:
+            print(f"\n{len(gone)} gone since {since} (fixed or removed):")
+            print(brief(gone, args.limit))
         if any(t.inuse for t in targets):
             print(f"{s['in_use']} in code running right now"
                   + (f", {s['restart_needed']} still running an old copy that was upgraded on disk (↻: restart "
