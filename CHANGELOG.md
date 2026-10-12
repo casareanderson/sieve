@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `--new`: show only findings that are new since the last `--new` run of the same scan, plus what has gone (fixed or
+  removed). The exit code follows the new findings only, for quiet daily cron jobs. One baseline per scan, next to the
+  cache, or `--baseline FILE`. An incomplete scan keeps the old baseline and reports nothing as gone.
+- `sieve diff OLD.json NEW.json`: the same comparison between two saved `--json` reports.
+
 ## 0.3.1 (2026-10-11)
 
 - Published to PyPI as `sieve-scan` (`pipx install sieve-scan`); the command is still `sieve`. No code change.
