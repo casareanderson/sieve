@@ -313,14 +313,15 @@ it let them through), and at least **medium** when a group other than the owner'
 `~/.codex/auth.json`) only when someone else can read it.
 
 ```
-$ sudo sieve secrets
+$ sudo sieve secrets          # three machines from the author's network, trimmed
 # host: plain-text secrets, 0 packages  (553 files read)
-# containers: environment variables, 0 packages
 
-ALERT  EPSS  SEVERITY  IN USE  ID                             PACKAGE                       INSTALLED → FIXED                                         TARGET
-       -     HIGH      -       SIEVE-SECRET-IN-FILE           /srv/app/.env                 2 secrets (GitHub token, password) line 3, 0644, fp… → chmod 600 /srv/app/.env; load it from…  host
-       -     MEDIUM    -       SIEVE-SECRET-IN-AGENT-CHAT     …4f-95ec-704f395b035d.jsonl   1 secret (OpenRouter key) line 42, 0600, fp… → rotate it (it was sent to the model…          host
-       -     LOW       -       SIEVE-SECRET-IN-CONTAINER-ENV  container:authelia            2 in env (AUTHELIA_JWT_SECRET, …) → pass it as a file (Docker/compose secrets…  containers
+ALERT  EPSS  SEVERITY  IN USE  ID                             PACKAGE                       INSTALLED → FIXED                                                   TARGET
+       -     HIGH      -       SIEVE-SECRET-IN-FILE           /opt/obico-server/.env        1 secret (API key) line 1, 0664, fp 7c041b23 → chmod 600 /opt/obic…  host
+       -     HIGH      -       SIEVE-SECRET-PRIVATE-KEY       /opt/vw-data/rsa_key.pem      unencrypted private key, 0644, fp 275f74bd → chmod 600 /opt/vw-da…  host
+       -     MEDIUM    -       SIEVE-SECRET-IN-AGENT-CHAT     …41-45d8-8f4d-14eda3900164.jsonl  1 secret (OpenRouter key) line 42, 0600, fp f6d8a4b5 → rotate it…  host
+       -     MEDIUM    -       SIEVE-SECRET-IN-HISTORY        /root/.bash_history           2 secrets (Discord bot token, secret) line 55, 0600, fp 9c53c342 → …  host
+       -     LOW       -       SIEVE-SECRET-IN-CONTAINER-ENV  container:langfuse-postgres-1  1 in env (POSTGRES_PASSWORD), fp 6e548b44 → pass it as a file (Doc…  containers
 ```
 
 **The secret itself never leaves the function that found it**: not in the output, the JSON, the `--new` baseline,

@@ -651,7 +651,8 @@ def accounts_report(root="/"):
 # ahead (one combined alternation read transcripts at ~2 MB/s; these run at ~1 GB/s); shapes whose head isn't a
 # literal anchor on a later literal and check the head in `before`.
 SECRET_SHAPES = [
-    ("private key", r"-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[A-Za-z0-9+/=\s\\n:,-]{0,80}", ""),
+    ("private key", r"-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----(?:\s|\\[rn])+(?:[A-Za-z-]+: [^\n\\]*(?:\s|\\[rn])+)*"
+                    r"[A-Za-z0-9+/=]{40}", ""),                    # a body, not a regex or a doc mentioning the header
     ("AWS access key", r"(?:AKIA|ASIA)[0-9A-Z]{16}\b", ""),
     ("GitHub token", r"gh[pousr]_[A-Za-z0-9]{36,255}\b", ""),
     ("GitHub token", r"github_pat_[A-Za-z0-9_]{60,255}\b", ""),
@@ -704,7 +705,14 @@ SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", "site-packa
              ".cargo", ".rustup", ".pyenv", ".nvm", ".m2", ".gradle", ".Trash", "snap", ".vscode-server", ".vscode",
              ".cursor-server", "google-chrome", "chromium", "BraveSoftware", "mozilla", ".mozilla", "JetBrains",
              "Code", "Cursor", "lost+found", ".local/lib", "proc", "sys", "dev", "run", ".docker/buildx", ".bun",
-             ".deno", "go", ".terraform", "dist", "build", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
+             ".deno", "go", ".terraform", "dist", "build", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+             ".linuxbrew", "audio_cache"}
+# Inside a git checkout or one of these, only files that are secrets by name (.env, compose, .netrc …) are read:
+# translations, docs, test fixtures and API specs are full of `password:` examples and test keys.
+SOURCE_DIRS = {"locales", "locale", "translations", ".translations", "i18n", "l10n", "lang", "docs", "doc", "test",
+               "tests", "testdata", "test-data", "fixtures", "examples", "example", "samples", "frontend",
+               "frontend-build", "public", "generated", "fern", "spec", "specs", "__tests__", "static", "assets",
+               "certdata", "bdd", "e2e", "mocks", "vendor", "third_party", "src"}
 # AI coding agents: (agent, pattern relative to a home directory, what it is). "login" is the tool's own credential
 # store: reported only when other users can read it.
 AGENT_STORES = [
@@ -721,14 +729,13 @@ AGENT_STORES = [
     ("OpenCode", ".local/share/opencode/storage/**/*.json", "chat"),
     ("OpenCode", ".local/share/opencode/*.db", "chat"),
     ("Hermes", ".hermes/**/.env", "config"), ("Hermes", ".hermes/**/config.yaml", "config"),
-    ("Hermes", ".hermes/**/*.json", "chat"), ("Hermes", ".hermes/**/*.jsonl", "chat"),
-    ("Hermes", ".hermes/**/*.db", "chat"),
+    ("Hermes", ".hermes/**/auth.json", "login"), ("Hermes", ".hermes/**/sessions/**/*.json*", "chat"),
+    ("Hermes", ".hermes/**/state.db", "chat"), ("Hermes", ".hermes/.hermes_history", "chat"),
     ("Gemini CLI", ".gemini/settings.json", "config"), ("Gemini CLI", ".gemini/oauth_creds.json", "login"),
     ("Gemini CLI", ".gemini/tmp/**/*.json", "chat"),
     ("Goose", ".config/goose/config.yaml", "config"), ("Goose", ".local/share/goose/sessions/*.jsonl", "chat"),
     ("aider", ".aider.conf.yml", "config"),
 ]
-AGENT_DIRS = {".claude", ".codex", ".continue", ".hermes", ".gemini", ".cursor"}   # walked by AGENT_STORES only
 SECRET_ROOTS = ["etc", "opt", "srv", "usr/local/etc", "var/lib/casaos/apps"]
 TEXT_CAP, CONFIG_CAP, CHAT_CAP = 4 << 20, 512 << 10, 1 << 30
 
@@ -753,8 +760,9 @@ def secretish(v, strict=False):
     """Does a keyword's value look like a real secret, not a reference to one?"""
     if _placeholder(v) or IDENT.match(v) or v.startswith(("/", "./", "~/", "http", "-")) or v.isdigit():
         return False
-    if "=" in v.rstrip("=") or not (any(c.isdigit() for c in v) or (v.lower() != v and v.upper() != v)):
-        return False                            # KEY=VALUE pairs, and plain lower-case words and phrases
+    if "=" in v.rstrip("=") or not (any(c.isdigit() for c in v) or any(c.isupper() for c in v[1:]) and
+                                    any(c.islower() for c in v)):
+        return False                            # KEY=VALUE pairs, and words: "secret-values", "Contraseña"
     if _classes(v) < 2 or _entropy(v) < (3.5 if strict else 2.8):
         return False
     return not strict or len(v) >= 12
@@ -947,6 +955,9 @@ def _classify(rel_home, fn):
         return "file"
     if re.match(r"^(?:docker-)?compose[\w.-]*\.ya?ml$", low):
         return "file"
+    if re.search(r"token|secret|credential|identity", low) and \
+            low.endswith((".json", ".yaml", ".yml", ".env", ".txt", ".conf", ".ini", ".toml")):
+        return "file"                           # youtube-token.json, client_secret.json, .infisical-identity.env
     return None
 
 
@@ -1009,28 +1020,39 @@ def secrets_report(root="/", salt=None, dirs=None, depth=6):
         if hits:
             emit(path, where, hits, line, st, agent)
 
-    def walk(top, maxdepth, cfg, in_home):
+    def walk(top, maxdepth, cfg, home=False):
+        """cfg: also read config-type files for `password=` lines. In a home directory that's only done under its
+        dot-directories (~/.config, ~/.hermes …); in a git checkout or a docs/test/locale directory never."""
         base = top.count(os.sep)
+        mode = {top: cfg}
         for dp, dns, fns in os.walk(top):
             rel = dp[rlen:]
-            dns[:] = [d for d in dns if d not in SKIP_DIRS and not (in_home and dp == top and d in AGENT_DIRS)
-                      and os.path.join(rel, d).lstrip("/") not in SKIP_DIRS
+            here = mode.get(dp, cfg) and ".git" not in dns
+            dns[:] = [d for d in dns if d not in SKIP_DIRS and os.path.join(rel, d).lstrip("/") not in SKIP_DIRS
                       and not (rel in ("", "/") and d in ("proc", "sys", "dev", "run"))
                       and dp.count(os.sep) - base < maxdepth]
+            for d in dns:
+                mode[os.path.join(dp, d)] = (here or (home and dp == top and d.startswith("."))) \
+                    and d not in SOURCE_DIRS
+            source = not here and (".git" in dns or os.path.basename(dp) in SOURCE_DIRS or
+                                   any(part in SOURCE_DIRS for part in rel.split("/")))
             for fn in fns:
                 kind = _classify(rel, fn)
                 p = os.path.join(dp, fn)
+                if kind == "key" and source:
+                    continue
                 if kind:
                     look(p, kind)
-                elif cfg and fn.lower().endswith(CONFIG_EXT) and not fn.endswith(("-lock.json", ".lock.json")) \
-                        and ".min." not in fn and fn not in ("package.json", "tsconfig.json", "composer.json"):
+                elif here and fn.lower().endswith(CONFIG_EXT) and not fn.endswith(("-lock.json", ".lock.json")) \
+                        and ".min." not in fn and fn not in ("package.json", "tsconfig.json", "composer.json") \
+                        and not fn.startswith("models_dev_cache"):
                     look(p, "cfgscan")
 
     homes = _homes(root)
     if dirs:
         for d in dirs:
             if os.path.isdir(d):
-                walk(d, 8, True, False)
+                walk(d, 8, True)
             elif os.path.isfile(d):
                 look(d, _classify(os.path.dirname(d), os.path.basename(d)) or "cfgscan")
         return rep
@@ -1039,21 +1061,18 @@ def secrets_report(root="/", salt=None, dirs=None, depth=6):
             for p in sorted(glob.glob(os.path.join(h, pat), recursive=True)):
                 look(p, {"chat": "agent-chat", "config": "agent-config", "login": "agent-login"}[what], agent)
     for h in homes:
-        walk(h, depth, False, True)
-        cfgdir = os.path.join(h, ".config")
-        if os.path.isdir(cfgdir):
-            walk(cfgdir, 4, True, False)
+        walk(h, depth, False, home=True)
     for rel in SECRET_ROOTS:
         d = os.path.join(root, rel)
         if os.path.isdir(d):
-            walk(d, 5, True, False)
+            walk(d, 5, True)
     if hasattr(os, "geteuid") and os.geteuid() != 0:
         rep["note"] = "secrets: not root, so only files this user can read were checked"
     return rep
 
 
 ENV_SECRET = re.compile(r"(?i)(?:^|_)(?:pass|password|passwd|pwd|passphrase|token|secret|key|apikey|credentials?|"
-                        r"auth|dsn)(?:_|$)")
+                        r"dsn)(?:_|$)")
 ENV_NOT = re.compile(r"(?i)_(?:file|path|dir|url|uri|id|name|names|user|username|host|port|type|enabled|length|ttl|"
                      r"mode|version)$|(?:^|_)(?:public|pub)(?:_|$)|^gpg_key$")
 

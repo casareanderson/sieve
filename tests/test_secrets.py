@@ -45,7 +45,9 @@ def test_token_shapes():
     assert kinds(f'{{"key": "{OPENAI}"}}') == ["OpenAI key"]
     assert kinds(f"aws_access_key_id = {AWS}") == ["AWS access key"]
     assert kinds(f"DATABASE_URL=postgres://app:{PW}@db:5432/app") == ["password in URL"]
-    assert kinds(HDR) == ["private key"]
+    assert kinds(openssh_key(b"none")) == ["private key"]
+    assert kinds(json.dumps({"text": openssh_key(b"none")})) == ["private key"]            # inside a transcript
+    assert kinds(f"regex: '{HDR}[\\s\\S]*?'") == []                                    # a scanner's pattern
 
 
 def test_keyword_values_and_command_lines():
@@ -262,3 +264,30 @@ def test_cli_table_keeps_the_file_name(tmp_path, monkeypatch, capsys):
     cli.main(["secrets", str(tmp_path), "--cache", str(tmp_path / "c/sieve.db")])
     out = capsys.readouterr().out
     assert "…" in out and "on/.env" in out and GH not in out
+
+
+def test_source_trees_translations_and_repos_are_not_read_for_examples(tmp_path):
+    root = make_root(tmp_path)
+
+    def w(rel, text, mode=0o644):
+        p = tmp_path / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+        os.chmod(p, mode)
+    w("opt/app/locales/es.json", '{"password": "Contraseña"}')
+    w("opt/app/locales/de.json", f'{{"password": "{PW}"}}')                  # even a secret-shaped one
+    w("opt/repo/.git/HEAD", "ref: refs/heads/main\n")
+    w("opt/repo/api.yml", f"password: {PW}\n")
+    w("opt/repo/.env", f"API_KEY={PW}\n")
+    w("opt/repo/tests/key.pem", openssh_key(b"none"))
+    w("home/ana/.hermes/backups/full.json", f'{{"password": "{PW}"}}', 0o600)
+    w("home/ana/.hermes/auth.json", f'{{"secret": "{PW}"}}', 0o600)
+    w("home/ana/.hermes/youtube-token.json", f'{{"access_token": "{PW}"}}', 0o600)
+    w("home/ana/notes/app.yml", f"password: {PW}\n", 0o600)                # not under a dot-dir: not read
+    got = by_path(collect.secrets_report(root))
+    assert "/opt/repo/.env" in got and "/opt/repo/api.yml" not in got and "/opt/repo/tests/key.pem" not in got
+    assert not any("/locales/" in p for p in got)
+    assert got["/home/ana/.hermes/backups/full.json"]["where"] == "file"
+    assert got["/home/ana/.hermes/youtube-token.json"]["where"] == "file"
+    assert "/home/ana/.hermes/auth.json" not in got                          # Hermes' own login store, 0600
+    assert "/home/ana/notes/app.yml" not in got
