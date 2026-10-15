@@ -5,7 +5,8 @@
 [![Latest release](https://img.shields.io/github/v/release/casareanderson/sieve)](https://github.com/casareanderson/sieve/releases/latest)
 [![Buy Me a Coffee](https://raw.githubusercontent.com/casareanderson/.github/main/badges/bmc-yellow.svg)](https://buymeacoffee.com/iamc_tech) [![Beginner's guide: £5](https://img.shields.io/badge/beginner%27s%20guide-%C2%A35%20PDF-ff90e8)](https://asareanderson.gumroad.com/l/hkvjb)
 
-Find the CVEs that matter on a Linux box and its running containers.
+Find the CVEs that matter on a Linux box and its running containers, plus the passwords and plain-text secrets
+left lying around it.
 
 No scanner binary, no 1.4 GB database, no server: sieve reads the package lists already on the box, asks
 [OSV.dev](https://osv.dev) which advisories affect those exact versions, then ranks the results by
@@ -45,8 +46,10 @@ differs from the tools the [benchmark](#benchmark) runs it against.
 | Ranks fixable work by CISA KEV + EPSS by default | yes | optional | optional | no |
 | SBOM — export one, and scan one made by another tool | yes | yes | consumes | consumes |
 | SARIF for GitHub code scanning | yes | yes | yes | yes |
+| Plain-text secrets in files, container env and **AI agent chat logs** (`sieve secrets`) | yes | files and images | no | no |
+| Default passwords and open admin pages on ESPHome / WLED / Victron boards (`sieve devices`) | yes | no | no | no |
 
-trivy and grype are mature and far broader — IaC, secrets, licences, many more ecosystems — and if you want one
+trivy and grype are mature and far broader — IaC, licences, many more ecosystems — and if you want one
 tool to cover everything, use them. sieve stays deliberately small: the rows above are where a dependency-free
 scanner that looks at what is *actually running* earns its place alongside them. The weekly benchmark below keeps
 it honest that it does not miss the CVEs they catch.
@@ -474,7 +477,7 @@ Outputs: `findings`, `kev`, `fixable` (the summary counts after filters), `repor
 A scan that partly failed (exit code 2) always fails the step. On GitHub-hosted runners this mostly tells you
 about the runner image; it's more useful on self-hosted runners and in jobs that start the containers you ship.
 
-`@v1` follows the latest 0.x release; pin a release tag such as `@v0.3.0` if you want it fixed.
+`@v1` follows the latest 0.x release; pin a release tag such as `@v0.6.0` if you want it fixed.
 
 ### Code scanning
 
