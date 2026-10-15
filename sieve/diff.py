@@ -25,6 +25,7 @@ def scope(args):
     parts = [args.cmd, os.path.abspath(getattr(args, "root", None) or "/"), getattr(args, "dest", None) or "",
              *sorted(os.path.abspath(x) for x in (getattr(args, "dirs", None) or [])),
              *sorted(os.path.abspath(x) for x in (getattr(args, "files", None) or [])),
+             *sorted(getattr(args, "hosts", None) or []),
              "kernel" if getattr(args, "kernel", False) else ""]
     return hashlib.sha256("\0".join(parts).encode()).hexdigest()[:12]
 

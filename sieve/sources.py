@@ -26,6 +26,7 @@ class Target:
         self.status = "ok"
         self.inuse = None               # collect.inuse_report() for this target, if it could be read
         self.osinv = None               # (ecosystem, label, "deb"|"apk"|"rpm", entries), for --sbom
+        self.exposures = []             # exposure.* findings (no OSV involved)
 
     def as_dict(self):
         d = {"name": self.name, "kind": self.kind, "os": self.os, "packages": self.packages,
@@ -104,7 +105,18 @@ def host(root="/", kernel=False):
             t.inuse = collect.inuse_report(root, collect.host_pids(), rpm_files=rpm_files)
         except Exception as e:  # noqa: BLE001 — in-use is extra information, never a reason to fail the scan
             t.notes.append(f"in-use check failed: {type(e).__name__}: {e}")
+    add_accounts(t, collect.accounts_report(root))
     return t
+
+
+def add_accounts(t, rep):
+    from . import exposure
+    if rep and rep.get("board"):
+        t.os = f"{t.os} on {rep['board']}"
+    found, note = exposure.accounts(rep, t.name)
+    t.exposures += found
+    if note:
+        t.notes.append(note)
 
 
 def host_target(name, files, py, owned, npm, npm_owned, kernel=False, rpm_err=None):
@@ -250,6 +262,7 @@ def collector_source():
 def read_host(stream, name, kernel=False):
     """`collect.py host`'s tar stream → the remote machine's host Target, in-use report included."""
     files, py, npm, owned, npm_own, rpm_err, inuse, notes = {}, [], [], set(), set(), None, None, []
+    accounts = None
     with tarfile.open(fileobj=stream, mode="r|gz") as tf:
         for m in tf:
             if not m.isfile():
@@ -271,6 +284,11 @@ def read_host(stream, name, kernel=False):
                     notes.append("in-use data from the collector could not be read")
             elif m.name == "inuse_note":
                 notes.append(data)
+            elif m.name == "accounts":
+                try:
+                    accounts = json.loads(data)
+                except ValueError:
+                    notes.append("account data from the collector could not be read")
             elif m.name == "npm_owned":
                 npm_own = {line for line in data.splitlines() if line}
             elif m.name.startswith(("py/", "npm/")):
@@ -280,6 +298,8 @@ def read_host(stream, name, kernel=False):
     t = host_target(name, files, py, owned, npm, npm_own, kernel, rpm_err)
     t.inuse = inuse                             # read on the remote machine, where its processes are
     t.notes += notes
+    if accounts is not None:                    # an older collector sends none
+        add_accounts(t, accounts)
     return t
 
 

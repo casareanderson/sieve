@@ -193,6 +193,10 @@ def ecosystem(osr, alpine_release=""):
     if ident == "debian" or (not ident and not ver):
         major = ver.split(".")[0]
         return (f"Debian:{major}", f"debian {ver}") if major.isdigit() else (None, f"debian {ver or '?'}")
+    # 32-bit Raspberry Pi OS: Debian's archive rebuilt for armhf, same versions (the Pi's own repo adds a few
+    # packages, kernel and firmware, that OSV has no feed for and that simply match nothing)
+    if ident == "raspbian" and ver.split(".")[0].isdigit():
+        return f"Debian:{ver.split('.')[0]}", f"raspbian {ver} (scanned as debian {ver.split('.')[0]})"
     if ident == "ubuntu" or ("ubuntu" in like and ver):
         lts = "LTS" in osr.get("VERSION", "") or (ver.split(".")[0].isdigit() and int(ver.split(".")[0]) % 2 == 0
                                                   and ver.endswith(".04"))
