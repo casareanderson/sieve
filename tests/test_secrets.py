@@ -91,8 +91,9 @@ def make_root(tmp_path):
         os.chmod(p, mode)
         return p
     (tmp_path / "etc").mkdir()
-    (tmp_path / "etc/passwd").write_text("root:x:0:0::/root:/bin/bash\nana:x:1000:1000::/home/ana:/bin/bash\n")
-    (tmp_path / "etc/group").write_text("root:x:0:\nana:x:1000:\nops:x:2000:ana\n")
+    uid, gid = os.getuid(), os.getgid()            # ana owns the fixture files, whoever runs the tests
+    (tmp_path / "etc/passwd").write_text(f"root:x:0:0::/root:/bin/bash\nana:x:{uid or 1000}:{gid or 1000}::/home/ana:/bin/bash\n")
+    (tmp_path / "etc/group").write_text(f"root:x:0:\nana:x:{gid or 1000}:\nops:x:2000:ana\n")
     w("root/.bash_history", f"ls\ncurl -u admin:{PW} https://nas.example/api\n")
     w("root/.claude/projects/p/s.jsonl", '{"type":"user"}\n' + json.dumps({"text": f"use {OPENAI} for it"}) + "\n")
     w("root/.claude/.credentials.json", json.dumps({"token": OPENAI}))           # its own login store, 0600
@@ -130,7 +131,7 @@ def test_secrets_report(tmp_path):
     assert got["/etc/app/app.conf"]["reach"] == "world"
     assert got["/root/.ssh/id_ed25519"]["reach"] == "owner"
     assert got["/home/ana/app/.mcp.json"]["where"] == "agent-config"
-    assert got["/home/ana/app/.mcp.json"]["reach"] == "owner"           # group ana is ana's own group
+    assert got["/home/ana/app/.mcp.json"]["reach"] == "owner"           # ana's own group (or root's)
     blob = json.dumps(rep)
     for secret in (GH, OPENAI, PW, AWS):
         assert secret not in blob                                       # never the value
