@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0 (2026-10-15)
+
+### Passwords (`sieve host`, `sieve remote`)
+
+- New `SIEVE-*` exposure rows that need no CVE to be dangerous: board-image default passwords (Raspberry Pi OS,
+  DietPi, Armbian, Orange Pi, BeagleBone, Ubuntu for Pi, Jetson and others), empty passwords, root password with ssh
+  password login, `PermitEmptyPasswords`, DES/MD5 password hashes and an unlocked root. Defaults are hashed on the
+  scanned machine with the account's own salt; only the matching image name leaves it, never a password or hash.
+- sshd settings from `sshd -T` as root, else the config files (`Include` followed, stops at `Match`).
+- Board model read from the device tree. 32-bit Raspberry Pi OS (`ID=raspbian`) is now scanned against Debian's feed
+  instead of skipped.
+
+### Small boards (`sieve devices`, alias `esp`)
+
+- mDNS browse plus named hosts.
+- ESPHome: firmware release checked against OSV (dashboard-only advisories dropped), API encryption, OTA password,
+  web UI login, web OTA. Nothing is uploaded.
+- WLED: version, chip and OTA lock. No advisory feed exists for WLED.
+- Victron Venus OS: Remote Console login, Modbus TCP, plaintext MQTT on 1883.
+
 ## 0.4.0 (2026-10-12)
 
 - `--new`: show only findings that are new since the last `--new` run of the same scan, plus what has gone (fixed or
