@@ -48,16 +48,20 @@ def parser():
                         help="with --new: where to keep the last run (default: next to the cache, one file per scan)")
     common.add_argument("--limit", type=int, default=50, metavar="N",
                         help="table rows to print (default 50, 0 = all); the summary always counts everything")
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,sbom,devices,verify,remote,collector}")
+    sub = p.add_subparsers(dest="cmd", required=True,
+                           metavar="{host,containers,all,path,sbom,devices,secrets,verify,remote,collector}")
     root = argparse.ArgumentParser(add_help=False)
     root.add_argument("--root", default="/", metavar="PATH",
                       help="read the host's packages from this directory instead of / (e.g. the host's / "
                            "mounted at /host inside a container)")
-    sub.add_parser("host", parents=[common, root], help="scan this machine's OS and Python packages")
-    c = sub.add_parser("containers", parents=[common], help="scan every running Docker container (needs root)")
+    nosec = argparse.ArgumentParser(add_help=False)
+    nosec.add_argument("--no-secrets", action="store_true",
+                       help="skip the plain-text secrets check (files, AI agent chats, container environments)")
+    sub.add_parser("host", parents=[common, root, nosec], help="scan this machine's OS and Python packages")
+    c = sub.add_parser("containers", parents=[common, nosec], help="scan every running Docker container (needs root)")
     c.add_argument("--from-tar", metavar="FILE",
                    help="read a tar written by `sieve collector` on another machine ('-' = stdin) instead")
-    sub.add_parser("all", parents=[common, root], help="host + containers")
+    sub.add_parser("all", parents=[common, root, nosec], help="host + containers")
     pa = sub.add_parser("path", parents=[common], help="scan project directories: npm/yarn/pnpm lockfiles, "
                         "node_modules, requirements*.txt, poetry.lock, uv.lock, virtualenvs")
     pa.add_argument("dirs", nargs="+", metavar="DIR")
@@ -73,6 +77,12 @@ def parser():
     e.add_argument("--discover-seconds", type=float, default=3.0, metavar="S",
                    help="how long to listen for mDNS answers (default 3)")
     e.add_argument("--no-discover", action="store_true", help="only the HOSTs given, no mDNS browse")
+    se = sub.add_parser("secrets", parents=[common, root],
+                        help="only the plain-text secrets check: credentials in files, shell histories, AI agent "
+                        "chats and configs, unencrypted private keys, container environments; no advisory lookups")
+    se.add_argument("dirs", nargs="*", metavar="DIR", help="look only in these directories (default: home "
+                    "directories, AI agent stores, /etc, /opt, /srv and the container environments)")
+    se.add_argument("--no-containers", action="store_true", help="skip the container environments")
     v = sub.add_parser("verify", parents=[root], help="has any installed file changed since its package manager put it "
                        "there? (dpkg, apk, rpm and pip checksums already on disk)")
     v.add_argument("--json", action="store_true", help="machine-readable output")
@@ -86,7 +96,7 @@ def parser():
     v.add_argument("--all-missing", action="store_true",
                    help="also list missing docs, man pages and translations (images trim these; counted otherwise)")
     v.add_argument("--limit", type=int, default=50, metavar="N", help="table rows to print (default 50, 0 = all)")
-    r = sub.add_parser("remote", parents=[common],
+    r = sub.add_parser("remote", parents=[common, nosec],
                        help="scan another machine over ssh (host + its containers); it needs only python3")
     r.add_argument("dest", metavar="user@host", help="ssh destination (key auth: sieve runs ssh in BatchMode)")
     r.add_argument("--port", type=int, help="ssh port")
@@ -144,8 +154,13 @@ def scan(args, warn):
             t.pkgs, t.osinv = [], None                  # free the lists once matched
         targets.append(t)
 
+    want_secrets = not getattr(args, "no_secrets", False)
+    salt = sources.secret_key(args.cache) if want_secrets and args.cmd in (
+        "host", "all", "containers", "remote", "secrets") and not export else None
+    if args.cmd == "secrets":
+        secrets_scan(args, salt, targets, findings, errors, warn)
     if args.cmd in ("host", "all"):
-        run(sources.host(root=args.root, kernel=args.kernel))
+        run(sources.host(root=args.root, kernel=args.kernel, secrets=want_secrets and not export, salt=salt))
     if args.cmd == "sbom":
         from . import sbom
         for f in args.files:
@@ -159,9 +174,9 @@ def scan(args, warn):
             if getattr(args, "from_tar", None):
                 stream = sys.stdin.buffer if args.from_tar == "-" else open(args.from_tar, "rb")
             else:
-                proc, stream = sources.run_collector()
+                proc, stream = sources.run_collector(salt)
             errs = []
-            for t in sources.read_collected(stream, errs, kernel=args.kernel):
+            for t in sources.read_collected(stream, errs, kernel=args.kernel, secrets=want_secrets):
                 run(t)
             errors += [f"collector: {e}" for e in errs]
             if proc:
@@ -174,12 +189,12 @@ def scan(args, warn):
         if args.cmd == "containers" and not targets and not errors:
             warn("no running containers found")
     if args.cmd == "remote":
-        remote(args, run, errors)
+        remote(args, run, errors, salt)
     if args.cmd in ("devices", "esp"):
         esp_scan(args, run, errors, warn)
-    if not args.no_epss and findings:
-        scores = intel.epss_scores(os.path.dirname(os.path.abspath(args.cache)),
-                                   {f["id"] for f in findings if f["id"].startswith("CVE-")})
+    cves = {f["id"] for f in findings if f["id"].startswith("CVE-")}
+    if not args.no_epss and cves:
+        scores = intel.epss_scores(os.path.dirname(os.path.abspath(args.cache)), cves)
         for f in findings:
             e = scores.get(f["id"])
             f["epss"], f["epss_percentile"] = e if e else (None, None)
@@ -187,6 +202,39 @@ def scan(args, warn):
         for f in findings:
             f["epss"] = f["epss_percentile"] = None
     return targets, findings, errors
+
+
+def secrets_scan(args, salt, targets, findings, errors, warn):
+    """`sieve secrets`: the secrets check alone. Nothing is asked of OSV, KEV or EPSS."""
+    from . import collect, exposure
+    t = sources.Target("host" if not args.dirs else ", ".join(args.dirs), "host")
+    t.os = "plain-text secrets"
+    try:
+        rep = collect.secrets_report(args.root, salt, dirs=[os.path.abspath(d) for d in args.dirs] or None)
+        sources.add_secrets(t, rep)
+        t.notes.insert(0, f"{rep.get('scanned', 0)} files read")
+    except Exception as e:  # noqa: BLE001
+        t.status = "error"
+        t.notes.append(f"secrets check failed: {type(e).__name__}: {e}")
+    findings += t.exposures
+    targets.append(t)
+    if args.dirs or args.no_containers or os.path.realpath(args.root) != "/":
+        return
+    import shutil
+    if not shutil.which("docker"):
+        return
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        warn("secrets: container environments need root (docker inspect); skipped")
+        return
+    c = sources.Target("containers", "container")
+    c.os = "environment variables"
+    try:
+        for entries in collect.containers_env(salt).values():
+            c.exposures += exposure.container_env(entries, "containers")
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"containers: {e}")
+    findings += c.exposures
+    targets.append(c)
 
 
 def esp_firmware_only(found, t):
@@ -279,7 +327,7 @@ def esp_scan(args, run, errors, warn):
 DEST = re.compile(r"^[A-Za-z0-9_.@:\[\]%+-]+$")
 
 
-def remote(args, run, errors):
+def remote(args, run, errors, salt=None):
     """`sieve remote`: the collector in host mode, then (unless --no-containers) in container mode, each piped to the
     remote python3 over ssh. Nothing is installed or written there; only package metadata comes back."""
     if not DEST.match(args.dest) or args.dest.startswith("-"):
@@ -287,7 +335,7 @@ def remote(args, run, errors):
         return
     label = args.dest.rsplit("@", 1)[-1]
     ssh = {"port": args.port, "identity": args.identity, "opts": args.ssh_opt}
-    script = sources.collector_source()
+    script = sources.salted(sources.collector_source(), salt)
 
     def over_ssh(mode, sudo, read):
         p, stream = sources.run_remote(sources.ssh_command(args.dest, sudo=sudo, mode=mode, **ssh), script)
@@ -306,7 +354,8 @@ def remote(args, run, errors):
     sudo = args.sudo and not args.dest.startswith("root@")
     host = []
     try:
-        over_ssh("host", sudo, lambda s: host.append(sources.read_host(s, label, kernel=args.kernel)))
+        over_ssh("host" + (" --no-secrets" if args.no_secrets else ""), sudo,
+                 lambda s: host.append(sources.read_host(s, label, kernel=args.kernel)))
         run(host[0])
     except Exception as e:  # noqa: BLE001
         errors.append(f"remote host {label}: {e}")
@@ -316,7 +365,8 @@ def remote(args, run, errors):
     errs, n = [], []
     try:
         over_ssh("", sudo,
-                 lambda s: n.extend(run(t) for t in sources.read_collected(s, errs, kernel=args.kernel)))
+                 lambda s: n.extend(run(t) for t in sources.read_collected(s, errs, kernel=args.kernel,
+                                                                           secrets=not args.no_secrets)))
     except Exception as e:  # noqa: BLE001
         errors.append(f"remote containers {label}: {e}")
         return
@@ -331,6 +381,12 @@ def _cut(s, n):
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
+def _tail(s, n):
+    """A path keeps its end (the file name) when it's cut."""
+    s = str(s)
+    return s if len(s) <= n or not s.startswith("/") else "…" + s[-(n - 1):]
+
+
 def table(findings, limit):
     rows = [("ALERT", "EPSS", "SEVERITY", "IN USE", "ID", "PACKAGE", "INSTALLED → FIXED", "TARGET")]
     use = {inuse.LOADED: "yes", inuse.NOT_LOADED: "no", inuse.UNKNOWN: "?"}
@@ -342,7 +398,7 @@ def table(findings, limit):
         exp = f["status"] == "exposure"
         rows.append((flag, epss, f["severity"],
                      "-" if exp else use.get(f.get("in_use"), "?") + (" ↻" if f.get("restart_needed") else ""),
-                     f["id"], _cut(f["package"], 28),
+                     f["id"], _tail(f["package"], 28) if exp else _cut(f["package"], 28),
                      f"{_cut(f['installed'], 34 if exp else 26)} → {_cut(fix, 48 if exp else 26)}",
                      _cut(f["target"], 32)))
     w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]

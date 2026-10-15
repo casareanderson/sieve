@@ -89,7 +89,7 @@ def test_kev_stale_cache_used_when_fetch_fails(tmp_path, capsys):
 def test_root_option_reaches_host_scan(monkeypatch, tmp_path):
     seen = {}
 
-    def fake_host(root="/", kernel=False):
+    def fake_host(root="/", kernel=False, **kw):
         seen["root"] = root
         return sources.Target("host", "host")
     monkeypatch.setattr(sources, "host", fake_host)

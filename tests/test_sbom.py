@@ -139,7 +139,7 @@ def test_export_never_asks_osv(monkeypatch, capsys):
         raise AssertionError("OSV/KEV must not be touched by a plain --sbom export")
     monkeypatch.setattr(cli.osv, "OSV", boom)
     monkeypatch.setattr(cli.intel, "kev_set", boom)
-    monkeypatch.setattr(cli.sources, "host", lambda root, kernel: targets()[0])
+    monkeypatch.setattr(cli.sources, "host", lambda root, kernel, **kw: targets()[0])
     assert cli.main(["host", "--sbom", "cyclonedx"]) == 0
     doc = json.loads(capsys.readouterr().out)
     assert doc["bomFormat"] == "CycloneDX" and len(doc["components"][0]["components"]) == 5
