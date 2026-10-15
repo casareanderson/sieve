@@ -277,11 +277,11 @@ def test_wled():
     assert cli.esp_target(locked).exposures == []
 
 
-def test_devices_cli_offline(monkeypatch, capsys):
+def test_devices_cli_offline(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(esp, "discover", lambda s: {"10.0.0.9": {"kind": "wled"}})
     monkeypatch.setattr(esp, "probe_wled", lambda ip, info: {"ip": ip, "kind": "wled", "version": "16.0.1",
                                                              "web": "open", "ota_lock": False})
-    rc = cli.main(["devices", "--no-epss", "--cache", "/nonexistent/sieve.db"])
+    rc = cli.main(["devices", "--no-epss", "--cache", str(tmp_path / "sieve.db")])
     out = capsys.readouterr().out
     assert rc == cli.EXIT_OK and "SIEVE-WLED-OTA-UNLOCKED" in out and "wled:10.0.0.9" in out
 
