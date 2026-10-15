@@ -91,10 +91,11 @@ sieve path DIR ...  # project directories: lockfiles, node_modules, requirements
 sieve verify        # has any installed file changed since its package manager put it there? (see Verify)
 sieve remote user@host   # another machine over ssh: what `sieve all` would find there, nothing installed there
 sieve sbom FILE ...      # scan SBOMs made by other tools (CycloneDX or SPDX JSON; see SBOM)
+sieve devices [HOST ...] # ESPHome, WLED and Victron Venus OS boards on the network: firmware advisories + open OTA/API/web UI
 sieve diff OLD.json NEW.json   # what is new in a saved --json report, and what has gone (see Only what's new)
 ```
 
-Options (for `host`, `containers`, `all`, `path`, `remote` and `sbom`):
+Options (for `host`, `containers`, `all`, `path`, `remote`, `sbom` and `devices`):
 
 | option | what it does |
 |---|---|
@@ -239,6 +240,56 @@ anyone with root can rewrite the checksum lists as easily as the files. A clean 
 Measured: a Debian 13 Proxmox node, 811 packages and 70,795 files, in 34 s (clean); twelve running containers,
 81,079 files, in 31 s. It is IO-bound: on a spinning disk the first full pass over a desktop-sized install took
 over 20 minutes, so use `--packages` for a quick look or run it at night.
+
+### Passwords and small boards
+
+`sieve host` and `sieve remote` also check how the machine can be logged into, without any CVE involved. These rows
+have ids starting `SIEVE-` and work with every filter, `--new`, `--json` and `--sarif` like any other finding:
+
+| id | severity | what |
+|---|---|---|
+| `SIEVE-DEFAULT-PASSWORD` | critical | an account still has its board image's default password (`pi`/`raspberry`, DietPi, Armbian, Orange Pi, BeagleBone, Ubuntu for Pi, Jetson, ...) |
+| `SIEVE-EMPTY-PASSWORD` | critical | an account has no password at all |
+| `SIEVE-ROOT-SSH-PASSWORD` | high | root has a password and sshd lets root log in with it |
+| `SIEVE-SSH-EMPTY-PASSWORDS` | high | sshd has `PermitEmptyPasswords yes` |
+| `SIEVE-WEAK-PASSWORD-HASH` | medium | a password is stored as DES or MD5 crypt |
+| `SIEVE-ROOT-PASSWORD` | low | root's password isn't locked (ssh doesn't take it, but a console, `su` or a PAM web UI does) |
+
+Reading `/etc/shadow` needs root (`sudo sieve host`, `sieve remote root@pi` or `--sudo`); without it the scan says
+so and carries on. **No password or hash ever leaves the machine**: the default-password check hashes each known
+default with the account's own salt *on the machine being scanned* (libcrypt via ctypes) and reports only the image
+name it matched. sshd settings come from `sshd -T` when sieve runs as root there, otherwise from the config files.
+Single-board computers show their model (`debian 12 on Raspberry Pi 4 Model B Rev 1.4`) and 32-bit Raspberry Pi
+OS (`ID=raspbian`) is scanned against Debian's feed.
+
+`sieve devices` looks at microcontroller boards, which have no package list to read:
+
+```
+$ sieve devices                 # mDNS browse for ESPHome and WLED, ~3 s
+$ sieve devices 192.168.8.32 192.168.8.176   # plus boards that don't answer mDNS, and Venus OS
+# esp:Homelab Watchdog (192.168.8.32): ESPHome (version unknown), 0 packages [partial]  (version unknown: …; api closed, ota password, web open)
+# venus:192.168.8.176: Victron Venus OS, 0 packages  (remote console login, modbus closed, mqtt 1883 closed, ssh closed; …)
+# esp:Garden Room BT Proxy (192.168.8.187): ESPHome 2026.8.2 on ESP32/esp32dev, 1 packages  (api encrypted, ota password, web closed)
+# wled:Kitchen (192.168.8.195): WLED 16.0.1 on esp32, 1 packages  (WLED publishes no security advisories …)
+
+ALERT  EPSS  SEVERITY  IN USE  ID                         PACKAGE           INSTALLED → FIXED                                                      TARGET
+       -     HIGH      -       SIEVE-WLED-OTA-UNLOCKED    wled firmware     OTA not locked → Config → Security & Updates: set a settings PIN…      wled:Kitchen (192.168.8.195)
+       -     MEDIUM    -       SIEVE-ESPHOME-WEB-NO-AUTH  esphome firmware  web UI without a login → web_server: auth: {username: …, password: …}  esp:Homelab Watchdog (192.168.8…
+
+2 findings, 0 actively exploited, 2 fixable
+```
+
+- **ESPHome**: the release that built the firmware (from mDNS, or the API hello when it's unencrypted) is matched
+  against OSV's `esphome` advisories, minus the ones about the dashboard. Then: native API without an encryption
+  key, OTA that flashes without a password, web UI without a login, and web-UI firmware upload. The OTA check
+  stops at the point where the board says whether it wants a password; nothing is uploaded (the board logs an
+  aborted OTA).
+- **WLED**: version and chip from `/json/info`, and whether OTA is locked (`/json/cfg`). WLED publishes no security
+  advisories, so its version is shown but not matched.
+- **Victron Venus OS** (Cerbo GX, or a Raspberry Pi running Venus): name it as a HOST. Flags a Remote Console
+  without a login, Modbus TCP on, and plaintext MQTT on 1883; all three are off in Venus's default "Secured"
+  profile. Victron publishes no advisories to OSV, so the firmware version isn't matched.
+- Not yet: Tasmota, Shelly, OpenBeken, and ESP-IDF's own advisories (a board doesn't say which ESP-IDF built it).
 
 ### Examples
 
@@ -530,6 +581,7 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
   | OS | OSV ecosystem | Package database |
   |---|---|---|
   | Debian, Ubuntu (and `ID_LIKE=ubuntu` derivatives) | `Debian:13`, `Ubuntu:24.04:LTS` | dpkg |
+  | Raspberry Pi OS 32-bit (`raspbian`) | `Debian:12` (the Pi's own repo packages match nothing) | dpkg |
   | Alpine | `Alpine:v3.20` + Alpine secdb | apk |
   | AlmaLinux 8, 9 | `AlmaLinux:9` | rpm (BerkeleyDB on 8, SQLite on 9) |
   | Rocky Linux 8, 9 | `Rocky Linux:9` | rpm |
@@ -551,6 +603,9 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
 - **Go binaries built before Go 1.18** store their build info differently and are counted but not read.
 - **In use is a snapshot**, and only native code is visible: pure-Python, npm, Go and Rust packages are always
   "unknown". See [In use](#in-use).
+- **Boards only report what they announce.** An ESPHome board that doesn't answer mDNS and has an encrypted (or
+  no) API gives no version, so it gets the exposure checks only. The default-password list is short and specific
+  to board images on purpose: it is not a password cracker.
 - Ubuntu fixes that only exist in Ubuntu Pro (ESM) are shown as "fix needs Ubuntu Pro (ESM)", not as fixable.
 - The advisory data comes from OSV.dev, KEV from CISA and EPSS from FIRST, so scanning needs outbound HTTPS to
   `api.osv.dev`, `secdb.alpinelinux.org`, `www.cisa.gov` and `epss.empiricalsecurity.com`. Package names and

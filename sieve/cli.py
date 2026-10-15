@@ -48,7 +48,7 @@ def parser():
                         help="with --new: where to keep the last run (default: next to the cache, one file per scan)")
     common.add_argument("--limit", type=int, default=50, metavar="N",
                         help="table rows to print (default 50, 0 = all); the summary always counts everything")
-    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,sbom,verify,remote,collector}")
+    sub = p.add_subparsers(dest="cmd", required=True, metavar="{host,containers,all,path,sbom,devices,verify,remote,collector}")
     root = argparse.ArgumentParser(add_help=False)
     root.add_argument("--root", default="/", metavar="PATH",
                       help="read the host's packages from this directory instead of / (e.g. the host's / "
@@ -65,6 +65,14 @@ def parser():
     sb = sub.add_parser("sbom", parents=[common], help="scan SBOMs made by other tools (CycloneDX or SPDX JSON: syft, "
                         "trivy, cdxgen, GitHub's dependency graph)")
     sb.add_argument("files", nargs="+", metavar="FILE")
+    e = sub.add_parser("devices", aliases=["esp"], parents=[common],
+                       help="small boards on the network (ESPHome, WLED, Victron Venus OS): advisories for the firmware release, plus "
+                       "unencrypted API, web UI without a login, OTA flashing without a password")
+    e.add_argument("hosts", nargs="*", metavar="HOST", help="devices to check as well as (or, with --no-discover, "
+                   "instead of) the ones found by mDNS")
+    e.add_argument("--discover-seconds", type=float, default=3.0, metavar="S",
+                   help="how long to listen for mDNS answers (default 3)")
+    e.add_argument("--no-discover", action="store_true", help="only the HOSTs given, no mDNS browse")
     v = sub.add_parser("verify", parents=[root], help="has any installed file changed since its package manager put it "
                        "there? (dpkg, apk, rpm and pip checksums already on disk)")
     v.add_argument("--json", action="store_true", help="machine-readable output")
@@ -116,11 +124,15 @@ def scan(args, warn):
         before, start = client.failed, len(findings)
         try:
             if t.pkgs:
-                findings.extend(osv.match(client, t.pkgs, kev, target=t.name))
+                found = osv.match(client, t.pkgs, kev, target=t.name)
+                if t.kind == "esp":
+                    found = esp_firmware_only(found, t)
+                findings.extend(found)
                 inuse.annotate(findings[start:], t)
         except Exception as e:  # noqa: BLE001 — one unreadable target must not stop the rest
             t.status = "error"
             t.notes.append(f"OSV query failed: {type(e).__name__}: {str(e)[:160]}")
+        findings.extend(t.exposures)
         lost = client.failed - before
         if lost and t.status == "ok":
             t.status = "partial"
@@ -163,6 +175,8 @@ def scan(args, warn):
             warn("no running containers found")
     if args.cmd == "remote":
         remote(args, run, errors)
+    if args.cmd in ("devices", "esp"):
+        esp_scan(args, run, errors, warn)
     if not args.no_epss and findings:
         scores = intel.epss_scores(os.path.dirname(os.path.abspath(args.cache)),
                                    {f["id"] for f in findings if f["id"].startswith("CVE-")})
@@ -173,6 +187,93 @@ def scan(args, warn):
         for f in findings:
             f["epss"] = f["epss_percentile"] = None
     return targets, findings, errors
+
+
+def esp_firmware_only(found, t):
+    """OSV's PyPI `esphome` advisories cover the dashboard and the compiler too; those don't affect a flashed board."""
+    keep = [f for f in found if "dashboard" not in (f.get("summary", "") + " " + f.get("details", "")).lower()]
+    if len(keep) < len(found):
+        t.notes.append(f"{len(found) - len(keep)} ESPHome dashboard advisories skipped (not in the firmware)")
+    return keep
+
+
+def wled_target(d):
+    from . import exposure
+    label = d.get("friendly_name") or d.get("name") or ""
+    t = sources.Target(f"wled:{label} ({d['ip']})" if label else f"wled:{d['ip']}", "wled")
+    t.os = f"WLED {d.get('version') or '(version unknown)'}" + (f" on {d['platform']}" if d.get("platform") else "")
+    t.packages = 1 if d.get("version") else 0
+    if d.get("web") == "closed":
+        t.status = "error"
+        t.notes.append("no answer on /json/info")
+    else:
+        t.notes.append("WLED publishes no security advisories (none on GitHub or OSV): version shown, not matched")
+        if d.get("ota_lock") is None:
+            t.notes.append("OTA lock state unreadable (a settings PIN hides /json/cfg)")
+    t.exposures = exposure.wled_device(d, t.name)
+    return t
+
+
+def venus_target(d):
+    from . import exposure
+    t = sources.Target(f"venus:{d['ip']}", "venus")
+    t.os = "Victron Venus OS"
+    t.notes.append(f"remote console {d['gui']}, modbus {'open' if d['modbus'] else 'closed'}, mqtt 1883 "
+                   f"{'open' if d['mqtt_plain'] else 'closed'}, ssh {'open' if d['ssh'] else 'closed'}; "
+                   "Victron publishes no advisories to OSV, so the firmware version isn't matched")
+    t.exposures = exposure.venus_device(d, t.name)
+    return t
+
+
+def esp_target(d):
+    from . import exposure
+    if d.get("kind") == "wled":
+        return wled_target(d)
+    if d.get("kind") == "venus":
+        return venus_target(d)
+    label = d.get("friendly_name") or d.get("name") or d.get("server_info") or ""
+    t = sources.Target(f"esp:{label} ({d['ip']})" if label else f"esp:{d['ip']}", "esp")
+    ver = d.get("version")
+    hw = "/".join(x for x in (d.get("platform"), d.get("board")) if x)
+    t.os = f"ESPHome {ver or '(version unknown)'}" + (f" on {hw}" if hw else "")
+    if ver:
+        t.pkgs = [("PyPI", "esphome", ver, "esphome firmware", ver)]
+        t.packages = 1
+    else:
+        t.notes.append("version unknown: no mDNS answer and no plaintext API, so no advisory check")
+        t.status = "partial"
+    t.notes.append(f"api {d['api']}, ota {d['ota']}, web {d['web']}"
+                   + (" (firmware upload on)" if d.get("web_ota") else ""))
+    t.exposures = exposure.esp_device(d, t.name)
+    return t
+
+
+def esp_scan(args, run, errors, warn):
+    from . import esp
+    import socket
+    found = {}
+    if not args.no_discover:
+        try:
+            found = esp.discover(args.discover_seconds)
+        except OSError as e:
+            errors.append(f"esp: mDNS browse failed: {e}")
+    for h in args.hosts:
+        try:
+            ip = socket.gethostbyname(h)
+        except OSError as e:
+            errors.append(f"esp: {h}: {e}")
+            continue
+        found.setdefault(ip, {})
+    if not found:
+        warn("esp: no ESPHome devices answered mDNS; name them: sieve esp HOST ...")
+    for ip in sorted(found, key=lambda x: tuple(int(p) for p in x.split(".")) if x.count(".") == 3 else (999,)):
+        info = found[ip]
+        if info.get("kind") == "wled" or (not info.get("kind") and esp.is_wled(ip)):
+            run(esp_target(esp.probe_wled(ip, info)))
+        elif not info.get("kind") and esp.is_venus(ip):
+            run(esp_target(esp.probe_venus(ip)))
+        else:
+            run(esp_target(esp.probe(ip, info)))
 
 
 DEST = re.compile(r"^[A-Za-z0-9_.@:\[\]%+-]+$")
@@ -238,10 +339,12 @@ def table(findings, limit):
         epss = f"{f['epss'] * 100:.1f}%" if f.get("epss") is not None else "-"
         fix = f["fixed"] or ("no fix" if f["status"] in ("affected", "fixed") else f["status"])
         flag = "☠ MALWARE" if f.get("malicious") else "⚠" if f["kev"] else ""
+        exp = f["status"] == "exposure"
         rows.append((flag, epss, f["severity"],
-                     use.get(f.get("in_use"), "?") + (" ↻" if f.get("restart_needed") else ""), f["id"],
-                     _cut(f["package"], 28),
-                     f"{_cut(f['installed'], 26)} → {_cut(fix, 26)}", _cut(f["target"], 32)))
+                     "-" if exp else use.get(f.get("in_use"), "?") + (" ↻" if f.get("restart_needed") else ""),
+                     f["id"], _cut(f["package"], 28),
+                     f"{_cut(f['installed'], 34 if exp else 26)} → {_cut(fix, 48 if exp else 26)}",
+                     _cut(f["target"], 32)))
     w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
     lines = ["  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip() for r in rows]
     if limit and len(findings) > limit:

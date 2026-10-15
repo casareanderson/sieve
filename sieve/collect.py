@@ -34,6 +34,8 @@ writes a gzipped tar to stdout holding only package metadata. It installs nothin
                    `prefix=` set in an npmrc)
   inuse            JSON: which of the machine's packages have code mapped into a running process (inuse_report),
                    or inuse_note: why it wasn't checked
+  accounts         JSON: which accounts have an empty or usable password (state + hash scheme only, never the
+                   hash) and the sshd options that decide password logins (accounts_report)
 """
 import glob
 import io
@@ -459,6 +461,181 @@ def npm_owned(root="/"):
     return owned
 
 
+# ── accounts: who can log in with a password, and can root do it over ssh ──────
+# Only the STATE of each password is reported (empty / usable / locked) and its hash scheme; a hash never leaves
+# this function, so nothing crackable is written to the tar or printed.
+SCHEMES = {"1": "md5", "2a": "bcrypt", "2b": "bcrypt", "2y": "bcrypt", "5": "sha256", "6": "sha512", "7": "scrypt",
+           "y": "yescrypt", "gy": "gost-yescrypt", "sha1": "sha1", "md5": "sun-md5"}
+SSHD_DEFAULTS = {"permitrootlogin": "prohibit-password", "passwordauthentication": "yes",
+                 "permitemptypasswords": "no", "kbdinteractiveauthentication": "yes", "usepam": "no"}
+
+
+def pw_state(field):
+    """/etc/shadow password field → (state, scheme). state: empty | usable | locked."""
+    if field == "":
+        return "empty", ""
+    if field[0] in "!*":
+        return "locked", ""
+    if field.startswith("$"):
+        return "usable", SCHEMES.get(field.split("$")[1], "unknown")
+    return "usable", "des" if len(field) == 13 else "unknown"
+
+
+def sshd_settings(root):
+    """→ dict of the sshd options that decide password logins, or None when there's no sshd config. Uses `sshd -T`
+    (the effective config) when it can run here as root; otherwise reads the config files, first value wins as in
+    sshd, Include followed, and stops at the first Match block (noted, since a Match can loosen things)."""
+    conf = os.path.join(root, "etc/ssh/sshd_config")
+    if not os.path.isfile(conf):
+        return None
+    want = set(SSHD_DEFAULTS)
+    if os.path.realpath(root) == "/" and hasattr(os, "geteuid") and os.geteuid() == 0:
+        exe = shutil.which("sshd") or next((p for p in ("/usr/sbin/sshd", "/usr/bin/sshd") if os.path.isfile(p)), None)
+        if exe:
+            try:
+                r = subprocess.run([exe, "-T"], capture_output=True, text=True, timeout=10)
+                if r.returncode == 0:
+                    got = dict(SSHD_DEFAULTS)
+                    for line in r.stdout.splitlines():
+                        k, _, v = line.partition(" ")
+                        if k in want:
+                            got[k] = v.strip().lower()
+                    got["source"] = "sshd -T"
+                    return got
+            except (OSError, subprocess.SubprocessError):
+                pass
+    got, seen, match = {}, set(), False
+
+    def read(path, depth=0):
+        nonlocal match
+        if depth > 8 or path in seen:
+            return
+        seen.add(path)
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                lines = f.read().splitlines()
+        except OSError:
+            return
+        for line in lines:
+            parts = line.split("#", 1)[0].replace("=", " ", 1).split()
+            if not parts:
+                continue
+            k = parts[0].lower()
+            if k == "match":
+                match = True
+                return
+            if k == "include":
+                for pat in parts[1:]:
+                    if not pat.startswith("/"):
+                        pat = "/etc/ssh/" + pat
+                    for p in sorted(glob.glob(os.path.join(root, pat.lstrip("/")))):
+                        read(p, depth + 1)
+                        if match:
+                            return
+            elif k in want and k not in got and len(parts) > 1:
+                got[k] = parts[1].lower()
+    read(conf)
+    out = dict(SSHD_DEFAULTS, **got)
+    out["source"] = "config files" + (" (stopped at a Match block)" if match else "")
+    return out
+
+
+# Passwords board images ship with (and forum guides tell people to keep). Each one is hashed HERE with the
+# account's own salt and compared; only the image name leaves this machine, never a password or a hash.
+IMAGE_DEFAULTS = [("pi", "raspberry", "Raspberry Pi OS (before 2022)"), ("root", "dietpi", "DietPi"),
+                  ("dietpi", "dietpi", "DietPi"), ("root", "1234", "Armbian first boot"),
+                  ("root", "orangepi", "Orange Pi OS"), ("orangepi", "orangepi", "Orange Pi OS"),
+                  ("debian", "temppwd", "BeagleBone Debian"), ("ubuntu", "ubuntu", "Ubuntu Server for Pi"),
+                  ("odroid", "odroid", "ODROID images"), ("rock", "rock", "Radxa ROCK images"),
+                  ("radxa", "radxa", "Radxa images"), ("alarm", "alarm", "Arch Linux ARM"),
+                  ("root", "root", "Arch Linux ARM / many SBC images"), ("khadas", "khadas", "Khadas images"),
+                  ("kali", "kali", "Kali ARM"), ("root", "toor", "Kali (old)"), ("nvidia", "nvidia", "Jetson images"),
+                  ("root", "raspberry", "Raspberry Pi guides")]
+
+
+def _crypt_fn():
+    """libcrypt's crypt(3) through ctypes (Python's crypt module is gone from 3.13). None when there is no libcrypt."""
+    import ctypes
+    import ctypes.util
+    for name in (ctypes.util.find_library("crypt"), "libcrypt.so.1", "libcrypt.so.2"):
+        if not name:
+            continue
+        try:
+            lib = ctypes.CDLL(name)
+        except OSError:
+            continue
+        fn = lib.crypt
+        fn.argtypes, fn.restype = [ctypes.c_char_p, ctypes.c_char_p], ctypes.c_char_p
+        return lambda pw, setting: (fn(pw.encode(), setting.encode()) or b"").decode("ascii", "replace")
+    return None
+
+
+def default_password(user, field, crypt=None):
+    """→ the image name whose default password `user` still has, "" if none, None if it can't be tested."""
+    cands = [(pw, img) for u, pw, img in IMAGE_DEFAULTS if u == user]
+    if not cands or not field.startswith("$"):
+        return ""
+    crypt = crypt or _crypt_fn()
+    if crypt is None:
+        return None
+    for pw, img in cands:
+        try:
+            if crypt(pw, field) == field:
+                return img
+        except Exception:  # noqa: BLE001 — an unsupported scheme reads as "not tested", never as a match
+            return None
+    return ""
+
+
+def board_model(root="/"):
+    """The board's own name from the device tree (Raspberry Pi 4 Model B Rev 1.4, Orange Pi 5, ...), or ""."""
+    for rel in ("proc/device-tree/model", "sys/firmware/devicetree/base/model"):
+        d = head(os.path.join(root, rel), 256)
+        if d:
+            return d.rstrip(b"\0\n").decode("utf-8", "replace")
+    return ""
+
+
+def accounts_report(root="/"):
+    """→ {"checked": bool, "note": str, "accounts": [{user, uid, state, scheme}], "sshd": {...} or None}.
+    accounts lists root plus every account whose password is empty or usable; locked ones are only counted."""
+    rep = {"checked": False, "note": "", "accounts": [], "locked": 0, "sshd": sshd_settings(root),
+           "board": board_model(root)}
+    uids = {}
+    try:
+        with open(os.path.join(root, "etc/passwd"), encoding="utf-8", errors="replace") as f:
+            for line in f:
+                p = line.rstrip("\n").split(":")
+                if len(p) >= 7:
+                    uids[p[0]] = (p[2], p[6])
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(root, "etc/shadow"), encoding="utf-8", errors="replace") as f:
+            shadow = f.read().splitlines()
+    except PermissionError:
+        rep["note"] = "passwords not checked: /etc/shadow needs root"
+        return rep
+    except OSError:
+        rep["note"] = "passwords not checked: no /etc/shadow"
+        return rep
+    for line in shadow:
+        p = line.split(":")
+        if len(p) < 2 or not p[0]:
+            continue
+        state, scheme = pw_state(p[1])
+        if state == "locked" and p[0] != "root":
+            rep["locked"] += 1
+            continue
+        uid, shell = uids.get(p[0], ("", ""))
+        a = {"user": p[0], "uid": uid, "shell": shell, "state": state, "scheme": scheme}
+        if state == "usable":
+            a["default_of"] = default_password(p[0], p[1])
+        rep["accounts"].append(a)
+    rep["checked"] = True
+    return rep
+
+
 def host_main(root="/"):
     """`python3 - host`: this machine, for `sieve remote`. Reads only; the tar goes to stdout."""
     out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|gz")
@@ -493,6 +670,10 @@ def host_main(root="/"):
             add("inuse", json.dumps(inuse_report(root, host_pids(), rpm_files=rpm_files)).encode())
         except Exception as e:  # noqa: BLE001 — in-use is extra information, never a reason to fail the scan
             add("inuse_note", f"in-use check failed: {type(e).__name__}: {e}".encode())
+    try:
+        add("accounts", json.dumps(accounts_report(root)).encode())
+    except Exception as e:  # noqa: BLE001 — extra information, never a reason to fail the scan
+        add("accounts", json.dumps({"checked": False, "note": f"account check failed: {e}"}).encode())
     out.close()
 
 
