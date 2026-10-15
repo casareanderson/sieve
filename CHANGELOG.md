@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Plain-text secrets (`sieve secrets`, and part of `host`, `all`, `remote`)
+
+- Credentials in files (`.env`, compose files, `.netrc`, `.git-credentials`, `.pgpass`, `.npmrc`, `.pypirc`, cloud,
+  docker and kube credentials, `password=` / `token:` lines in configs under `/etc`, `/opt`, `/srv`, `~/.config`),
+  shell histories, and private keys without a passphrase.
+- AI coding agents: secrets in Claude Code, Codex, Continue, OpenCode, Hermes, Gemini CLI, Goose and aider chat
+  transcripts, and tokens written into agent or MCP server configs (`.mcp.json`, `~/.claude.json`, Cursor, Claude
+  Desktop).
+- Running containers: credentials in the environment (`docker inspect`), minus what the image itself sets.
+- One row per file or container. Severity goes up when other users can read the file (its mode and every directory
+  above it are checked). The secret never leaves the scan: rows carry the path, line, kinds, mode and an 8-hex HMAC
+  fingerprint keyed by a random per-machine key, so `--new` and `diff` follow the same leak from run to run.
+- `--no-secrets` skips it. `sieve secrets DIR ...` checks only those directories.
+- EPSS is only downloaded when a scan has CVE findings.
+
 ## 0.5.0 (2026-10-15)
 
 ### Passwords (`sieve host`, `sieve remote`)

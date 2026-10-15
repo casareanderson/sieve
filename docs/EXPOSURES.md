@@ -1,7 +1,7 @@
 # Exposure findings
 
 Rows with an id starting `SIEVE-` are not advisories: they are ways in that need no CVE. Each one below says what
-sieve saw and how to close it. sieve never prints or sends a password or a password hash.
+sieve saw and how to close it. sieve never prints or sends a password, a password hash or any secret it finds.
 
 ## sieve-default-password
 An account still has the default password of the image it came from (for example `pi` / `raspberry` on Raspberry
@@ -57,3 +57,34 @@ needs it, and then firewall it to that one client.
 ## sieve-venus-mqtt-plaintext
 MQTT on 1883 without TLS or a password ("Weak"/"Unsecured" profile). Fix: Security profile → Secured (MQTT moves
 to TLS on 8883 with the GX password).
+
+## sieve-secret-in-file
+A credential in a plain-text file: an `.env` or compose file, `.netrc`, `.git-credentials`, `.pgpass`, `.npmrc`,
+`~/.aws/credentials`, `~/.docker/config.json` without a credential helper, a kubeconfig, or a `password=` line in a
+config. Fix: if anyone other than the owner can read it, `chmod 600` first. Then load it from a secret manager (pass,
+Vault, Infisical, systemd `LoadCredential=`), or use the tool's credential helper.
+
+## sieve-secret-in-history
+A password or token typed on a command line and saved in a shell history (`curl -u user:…`, `mysql -p…`,
+`export GH_TOKEN=…`). Fix: rotate it, then delete the line. `HISTCONTROL=ignorespace` (bash) keeps any command that
+starts with a space out of the history.
+
+## sieve-secret-in-agent-chat
+A secret in an AI coding agent's transcript: it was pasted in, or a tool printed it (`cat .env`, `env`, a config
+dump). It was sent to the model provider along with the rest of the chat, and transcripts get synced, shared and
+backed up. Fix: rotate it; deleting the transcript alone doesn't take it back.
+
+## sieve-secret-in-agent-config
+A token written straight into an agent or MCP server config (`.mcp.json`, `~/.claude.json`, Cursor's or Claude
+Desktop's config, Codex's `config.toml`). Configs get copied into repos and shared. Fix: have the MCP server read it
+from the environment, or point at a secret manager. An agent's own login store is only reported when someone other
+than its owner can read it.
+
+## sieve-secret-private-key
+A private key with no passphrase in a home directory (or anywhere, if everyone can read it): a copy of the file is
+the key. Fix: `ssh-keygen -p -f <key>` adds a passphrase; `ssh-agent` saves typing it.
+
+## sieve-secret-in-container-env
+A credential in a running container's environment. `docker inspect`, `/proc/<pid>/environ`, crash reports and any
+library that logs its environment all show it. Fix: Docker or compose secrets (mounted as files), or the image's
+`*_FILE` variables (`POSTGRES_PASSWORD_FILE=/run/secrets/db`). Values the image sets itself are not counted.

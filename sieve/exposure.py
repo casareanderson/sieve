@@ -7,6 +7,9 @@ id starting `SIEVE-`, `status: "exposure"`, the current state as `installed` and
                              password logins over ssh, weak hash schemes
   esp_device(dev, target)    from esp.probe(): ESPHome native API without encryption, web UI without a login,
                              OTA flashing without a password, web-UI firmware upload open to the LAN
+  secrets(report, target)    from collect.secrets_report(): credentials in plain-text files, shell histories, AI
+                             agent chats and configs, and private keys without a passphrase
+  container_env(entries, t)  from collect.containers_env(): credentials in a running container's environment
 """
 URL = "https://github.com/casareanderson/sieve/blob/main/docs/EXPOSURES.md#"
 WEAK = {"des": "DES crypt (8-character limit, cracked in seconds)", "md5": "MD5 crypt ($1$)",
@@ -135,4 +138,82 @@ def venus_device(dev, target):
                        "Security profile: Secured (MQTT over TLS on 8883 with a password)", "MEDIUM",
                        "plaintext MQTT on 1883 lets anyone on the network read every value and send W/ writes "
                        "to settings", target))
+    return out
+
+
+# ── plain-text secrets (collect.secrets_report, collect.containers_env) ───────
+SECRET_BASE = {"file": ("SIEVE-SECRET-IN-FILE", "LOW"), "history": ("SIEVE-SECRET-IN-HISTORY", "MEDIUM"),
+               "agent-chat": ("SIEVE-SECRET-IN-AGENT-CHAT", "MEDIUM"),
+               "agent-config": ("SIEVE-SECRET-IN-AGENT-CONFIG", "LOW"), "key": ("SIEVE-SECRET-PRIVATE-KEY", "LOW")}
+ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+
+
+def _at_least(sev, floor):
+    return sev if ORDER.index(sev) >= ORDER.index(floor) else floor
+
+
+def _secret_fix(f):
+    p, where, reach = f["path"], f["where"], f["reach"]
+    chmod = f"chmod 600 {p}; " if reach != "owner" else ""
+    if where == "key":
+        name = p.rsplit("/", 1)[-1]
+        if name.startswith("id_") or name.endswith(".ppk"):
+            return f"{chmod}ssh-keygen -p -f {p} (add a passphrase; ssh-agent saves retyping it)"
+        return f"{chmod or 'chmod 600 ' + p + '; '}keep it readable only by the service that uses it"
+    if where == "history":
+        return f"rotate it, then delete the line from {p} (HISTCONTROL=ignorespace: a leading space keeps a command out)"
+    if where == "agent-chat":
+        return f"{chmod}rotate it (it was sent to the model provider too), then delete the session or the line"
+    if where == "agent-config":
+        return f"{chmod}read it from the environment or a secret manager instead of writing it into the config"
+    return f"{chmod}load it from a secret manager (pass, Vault, Infisical, systemd credentials) or keep it 0600"
+
+
+def secrets(rep, target):
+    """→ (findings, note). One row per file, however many secrets it holds."""
+    if not rep or not rep.get("checked"):
+        return [], (rep or {}).get("note") or ""
+    out = []
+    for f in rep.get("files", []):
+        fid, sev = SECRET_BASE.get(f["where"], SECRET_BASE["file"])
+        reach = f["reach"]
+        if reach == "world":
+            sev = "HIGH"
+        elif reach.startswith("group:"):
+            sev = _at_least(sev, "MEDIUM")
+        who = {"world": "readable by every user on the machine", "owner": f"readable by {f['owner']} only"}.get(
+            reach, f"readable by group {reach[6:]}")
+        kinds = ", ".join(f["kinds"])
+        n = f["count"]
+        at = f" line {f['line']}" if f.get("line") else ""
+        what = (f"unencrypted private key, {f['mode']}" if f["where"] == "key" else
+                f"{n} secret{'s' if n != 1 else ''} ({kinds}){at}, {f['mode']}")
+        agent = f"{f['agent']} " if f.get("agent") else ""
+        summary = {"key": f"private key with no passphrase, {who}: a copy of the file is the key",
+                   "history": f"{kinds} typed on a command line and kept in the shell history, {who}",
+                   "agent-chat": f"{kinds} in an {agent}chat transcript, {who}: it is in the model provider's "
+                                 "logs too, and transcripts get synced, shared and backed up",
+                   "agent-config": f"{kinds} written into {agent}config{' (its login store)' if f.get('login_store') else ''}, {who}",
+                   }.get(f["where"], f"{kinds} in plain text, {who}")
+        details = (f"{f['path']}{at}; mode {f['mode']}, owner {f['owner']}, {who}. "
+                   + (f"fingerprint {f['fp']} (the same secret gives the same fingerprint on this machine). "
+                      if f.get("fp") else "") + "sieve never prints or sends the secret itself.")
+        out.append(row(fid, f["path"], what + (f", fp {f['fp']}" if f.get("fp") else ""), _secret_fix(f), sev,
+                       summary, target, details))
+    return out, rep.get("note") or ""
+
+
+def container_env(entries, target):
+    """collect.containers_env() entries for one image → one row per container."""
+    out = []
+    for c in entries or []:
+        names = ", ".join(v["var"] for v in c["vars"])
+        kinds = ", ".join(sorted({k for v in c["vars"] for k in v["kinds"]}))
+        out.append(row("SIEVE-SECRET-IN-CONTAINER-ENV", f"container:{c['container']}",
+                       f"{len(c['vars'])} in env ({names})" + (f", fp {c['fp']}" if c.get("fp") else ""),
+                       "pass it as a file (Docker/compose secrets, or a *_FILE variable) instead of an env var",
+                       "LOW", f"{kinds} in the container's environment ({names}): `docker inspect`, /proc/<pid>/"
+                       "environ, crash dumps and anything that logs the environment all show it", target,
+                       f"variables: {names}. Values the image sets itself are not counted. sieve never prints or "
+                       "sends the value."))
     return out

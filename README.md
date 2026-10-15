@@ -92,6 +92,7 @@ sieve verify        # has any installed file changed since its package manager p
 sieve remote user@host   # another machine over ssh: what `sieve all` would find there, nothing installed there
 sieve sbom FILE ...      # scan SBOMs made by other tools (CycloneDX or SPDX JSON; see SBOM)
 sieve devices [HOST ...] # ESPHome, WLED and Victron Venus OS boards on the network: firmware advisories + open OTA/API/web UI
+sieve secrets [DIR ...]  # plain-text credentials: files, shell histories, AI agent chats, container environments (see Secrets)
 sieve diff OLD.json NEW.json   # what is new in a saved --json report, and what has gone (see Only what's new)
 ```
 
@@ -115,6 +116,7 @@ Options (for `host`, `containers`, `all`, `path`, `remote`, `sbom` and `devices`
 | `--baseline FILE` | with `--new`: where to keep the last run, default next to the cache, one file per scan |
 | `--limit N` | table rows to print, default 50, `0` for all; the summary line always counts everything |
 | `--depth N` | `path`: how deep to look under each directory, default 8 |
+| `--no-secrets` | `host`, `all`, `containers`, `remote`: skip the plain-text secrets check (see [Secrets](#secrets)) |
 
 Exit codes: `1` if any known-malicious package or known-exploited (KEV) finding is in the output, `2` if part of
 the scan failed, otherwise `0`. Filters apply first, so `sieve all --fixable-only` in cron or CI fails only on KEV
@@ -290,6 +292,46 @@ ALERT  EPSS  SEVERITY  IN USE  ID                         PACKAGE           INST
   without a login, Modbus TCP on, and plaintext MQTT on 1883; all three are off in Venus's default "Secured"
   profile. Victron publishes no advisories to OSV, so the firmware version isn't matched.
 - Not yet: Tasmota, Shelly, OpenBeken, and ESP-IDF's own advisories (a board doesn't say which ESP-IDF built it).
+
+### Secrets
+
+`sieve host`, `all` and `remote` (and `sieve secrets` on its own, with no advisory lookups) look for credentials lying
+around in plain text. One row per file or container, however many secrets it holds:
+
+| id | severity | what |
+|---|---|---|
+| `SIEVE-SECRET-IN-FILE` | low | `.env`, compose files, `.netrc`, `.git-credentials`, `.pgpass`, `.npmrc`, `.pypirc`, cloud, docker and kube credentials, `password=` / `token:` lines in configs under `/etc`, `/opt`, `/srv` and `~/.config` |
+| `SIEVE-SECRET-IN-HISTORY` | medium | a password or token typed on a command line (`curl -u`, `mysql -p`, `export X_TOKEN=…`) and kept in a shell history |
+| `SIEVE-SECRET-IN-AGENT-CHAT` | medium | a secret in an AI coding agent's chat transcript: Claude Code, Codex, Continue, OpenCode, Hermes, Gemini CLI, Goose, aider. It went to the model provider too, so the fix is to rotate it |
+| `SIEVE-SECRET-IN-AGENT-CONFIG` | low | a token written into an agent or MCP server config (`.mcp.json`, `~/.claude.json`, Cursor, Claude Desktop, Codex …) |
+| `SIEVE-SECRET-PRIVATE-KEY` | low | a private key with no passphrase in a home directory |
+| `SIEVE-SECRET-IN-CONTAINER-ENV` | low | a running container has a credential in its environment (`docker inspect` shows it to anyone who can run docker) |
+
+Any of them becomes **high** when every user on the machine can read the file (its mode *and* every directory above
+it let them through), and at least **medium** when a group other than the owner's own can. A service's own key in
+`/etc` that only the service can read is not reported; an agent's own login store (`~/.claude/.credentials.json`,
+`~/.codex/auth.json`) only when someone else can read it.
+
+```
+$ sudo sieve secrets
+# host: plain-text secrets, 0 packages  (553 files read)
+# containers: environment variables, 0 packages
+
+ALERT  EPSS  SEVERITY  IN USE  ID                             PACKAGE                       INSTALLED → FIXED                                         TARGET
+       -     HIGH      -       SIEVE-SECRET-IN-FILE           /srv/app/.env                 2 secrets (GitHub token, password) line 3, 0644, fp… → chmod 600 /srv/app/.env; load it from…  host
+       -     MEDIUM    -       SIEVE-SECRET-IN-AGENT-CHAT     …4f-95ec-704f395b035d.jsonl   1 secret (OpenRouter key) line 42, 0600, fp… → rotate it (it was sent to the model…          host
+       -     LOW       -       SIEVE-SECRET-IN-CONTAINER-ENV  container:authelia            2 in env (AUTHELIA_JWT_SECRET, …) → pass it as a file (Docker/compose secrets…  containers
+```
+
+**The secret itself never leaves the function that found it**: not in the output, the JSON, the `--new` baseline,
+or the tar `sieve remote` brings back. A row says where (path and first line, or container and variable names), what
+kind, the file mode, who can read it, and an 8-hex fingerprint: an HMAC keyed by a random key sieve keeps next to its
+cache (`secrets.key`, 0600), so the same secret has the same fingerprint from run to run on that machine and nothing
+anyone else can check a guess against. Over ssh the key travels on stdin with the collector, never on a command line.
+Values set by a container's image are skipped (they ship with the image). Nothing is changed or redacted on disk.
+
+`sieve secrets DIR ...` looks only in those directories (a project, a backup, a mounted disk). Without root only what
+that user can read is checked, and container environments need root.
 
 ### Examples
 
@@ -606,6 +648,11 @@ are downloaded at most every 20 hours; if a download fails, the last copy is use
 - **Boards only report what they announce.** An ESPHome board that doesn't answer mDNS and has an encrypted (or
   no) API gives no version, so it gets the exposure checks only. The default-password list is short and specific
   to board images on purpose: it is not a password cracker.
+- **Secrets are found by shape and by name**, not by trying them: a token with no recognisable prefix in a file
+  sieve doesn't look at is missed, and a public key that looks like a secret (a Google Maps browser key in a fetched
+  web page, say) is reported. Passwords need a digit or mixed case and some randomness to count, so `correct horse
+  battery staple` written next to `password:` is missed. Agent chats are read up to 1 GB per file; other files up to
+  4 MB. Image layers and volumes inside containers are not searched, only their environment.
 - Ubuntu fixes that only exist in Ubuntu Pro (ESM) are shown as "fix needs Ubuntu Pro (ESM)", not as fixable.
 - The advisory data comes from OSV.dev, KEV from CISA and EPSS from FIRST, so scanning needs outbound HTTPS to
   `api.osv.dev`, `secdb.alpinelinux.org`, `www.cisa.gov` and `epss.empiricalsecurity.com`. Package names and

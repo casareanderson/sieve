@@ -36,6 +36,12 @@ writes a gzipped tar to stdout holding only package metadata. It installs nothin
                    or inuse_note: why it wasn't checked
   accounts         JSON: which accounts have an empty or usable password (state + hash scheme only, never the
                    hash) and the sshd options that decide password logins (accounts_report)
+  secrets          JSON: files holding plain-text credentials, unencrypted private keys and AI agent chats or
+                   configs with secrets in them: path, line, kinds, mode, who can read it and an HMAC fingerprint,
+                   never the secret (secrets_report; `host --no-secrets` skips it)
+
+Container mode also sends <n>/secrets: per running container, the names of environment variables that hold a
+credential (docker inspect; values the image itself sets are skipped), never the values.
 """
 import glob
 import io
@@ -636,7 +642,468 @@ def accounts_report(root="/"):
     return rep
 
 
-def host_main(root="/"):
+# ── secrets: credentials lying around in plain text ──────────────────────────────────────────────────────────────
+# Files (.env, compose files, .netrc, cloud and docker credentials, shell histories, configs under /etc and /opt),
+# unencrypted private keys, AI agent chats and configs, and container environments. A secret's VALUE never leaves
+# this function: what comes back is where it is, what kind it is, who can read the file, and an 8-hex HMAC (keyed
+# by the scanning machine's own random key) so the same leak is recognised from one run to the next.
+# (kind, pattern, what must come right before it). Every pattern starts with a literal so the regex engine can skip
+# ahead (one combined alternation read transcripts at ~2 MB/s; these run at ~1 GB/s); shapes whose head isn't a
+# literal anchor on a later literal and check the head in `before`.
+SECRET_SHAPES = [
+    ("private key", r"-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----[A-Za-z0-9+/=\s\\n:,-]{0,80}", ""),
+    ("AWS access key", r"(?:AKIA|ASIA)[0-9A-Z]{16}\b", ""),
+    ("GitHub token", r"gh[pousr]_[A-Za-z0-9]{36,255}\b", ""),
+    ("GitHub token", r"github_pat_[A-Za-z0-9_]{60,255}\b", ""),
+    ("GitLab token", r"glpat-[A-Za-z0-9_-]{20,}", ""),
+    ("Anthropic key", r"sk-ant-[A-Za-z0-9_-]{32,}", ""),
+    ("OpenRouter key", r"sk-or-v1-[0-9a-f]{64}\b", ""),
+    ("OpenAI key", r"sk-(?!ant-|or-v1-)(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}", ""),
+    ("Slack token", r"xox[abposr]-[0-9]{6,}-[A-Za-z0-9-]{10,}", ""),
+    ("Discord bot token", r"\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,38}\b", r"[MNO][A-Za-z0-9_-]{23,25}$"),
+    ("Stripe live key", r"k_live_[A-Za-z0-9]{20,}", r"[sr]$"),
+    ("Google API key", r"AIza[0-9A-Za-z_-]{35}\b", ""),
+    ("Hugging Face token", r"hf_[A-Za-z]{34,40}\b", ""),
+    ("Telegram bot token", r":AA[A-Za-z0-9_-]{33}\b", r"[0-9]{8,10}$"),
+    ("Infisical token", r"st\.[A-Za-z0-9-]{20,}\.[A-Za-z0-9]{20,}\.[A-Za-z0-9]{20,}", ""),
+    ("JWT", r"eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{16,}", ""),
+    ("password in URL", r"://[^\s/:@'\"<>\\]{0,64}:[^\s/@'\"<>\\]{3,128}@[A-Za-z0-9.-]+", r"[a-zA-Z][a-zA-Z0-9+.-]{1,20}$"),
+]
+SHAPES = [(k, re.compile(rx), re.compile(b) if b else None) for k, rx, b in SECRET_SHAPES]
+# keyword = value: `password=…`, `api_key: …`, `"token": "…"`, `export GH_TOKEN=…`, `mysql -p…`, `curl -u user:…`
+SECRET_WORD = re.compile(r"(?i)pass(?:word|wd|phrase)$|[_.-]pass$|pwd$|secret|token$|api_?key|access_?key|auth_?key|"
+                         r"auth_?token|private_?key|client_?secret|credential|bearer")
+NOT_SECRET_WORD = re.compile(r"(?i)(?:_|-|\b)(?:file|path|url|uri|id|ids|name|names|env|type|length|len|ttl|expiry|"
+                             r"expires?|expir\w*|header|field|count|limit|dir|endpoint|policy|hash|min|max|required|"
+                             r"enabled|timeout|prompt|hint|reset|rotation|cmd|command|helper|store|format|prefix|"
+                             r"suffix|mode|version|schema|label|placeholder|regex|pattern)$|^max_?tokens|^tokens?$|"
+                             r"tokeni[sz]|^passwordless|^no_?pass|_?usage$")
+KEYWORD_RE = re.compile(r"""(?:^|[\s"'{,;(\[]|\\[nt"])(?:export\s+|set\s+)?([A-Za-z_][A-Za-z0-9_.-]{0,60})["']?(\s*)"""
+                        r"""(=>|=|:)(\s*)(["']?)([^\s"'`\\,;#<>{}()\[\]|]{8,200})""")
+COMMON_PW = {"postgres", "password", "passw0rd", "admin", "root", "secret", "pass", "guest", "user", "mysql", "redis",
+             "changeit", "letmein", "default", "minio123", "minioadmin", "rabbitmq", "toor", "pa55word", "12345678"}
+CLI_PW_RE = re.compile(r"""(?:\bcurl\b[^\n|;]*?\s-u\s*["']?[^\s:"']{1,64}:|\bmysql(?:dump|admin)?\b[^\n|;]*?\s-p|"""
+                       r"""\bsshpass\s+-p\s*|--password[= ]\s*)["']?([^\s"'`\;|]{6,128})""")
+PLACEHOLDER = ("example", "changeme", "change_me", "change-me", "your", "replace", "placeholder", "dummy", "fake",
+               "sample", "redacted", "xxxx", "****", "...", "<", "$", "%(", "{{", "}}", "env:", "vault:", "file:",
+               "!secret", "secret:", "insert", "here", "todo", "fixme", "notreal", "not-real", "foobar", "s3cr3t",
+               "hunter2", "test")
+NOT_VALUES = {"true", "false", "null", "none", "nil", "required", "optional", "hidden", "string", "password",
+              "secret", "token", "undefined", "disabled", "enabled", "default", "prompt", "bearer", "basic"}
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$|^[A-Z0-9]+(?:_[A-Z0-9]+)+$|"
+                   r"^[a-z][a-z0-9]*(?:[_-][a-z0-9]+)+$|^[a-z]+(?:[A-Z][a-z0-9]*)+$|^[A-Z][a-z]+(?:[A-Z][a-z0-9]*)+$")
+SECRET_NAMES = {".netrc", "_netrc", ".git-credentials", ".pgpass", ".my.cnf", ".pypirc", ".npmrc", ".s3cfg",
+                "rclone.conf", "kubeconfig", ".mcp.json", ".aider.conf.yml", ".boto", ".passwd-s3fs", ".smbcredentials",
+                "credentials.json", "secrets.json", "secrets.yaml", "secrets.yml", "secrets.env", ".secrets"}
+HISTORY_NAMES = {".bash_history", ".zsh_history", ".history", ".sh_history", ".ash_history", ".mysql_history",
+                 ".psql_history", ".python_history", ".node_repl_history", ".sqlite_history", ".rediscli_history",
+                 ".aider.input.history", ".lesshst"}
+KEY_NAMES = re.compile(r"^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:_sk)?|.*\.(?:pem|key|ppk))$")
+CONFIG_EXT = (".conf", ".cfg", ".ini", ".yml", ".yaml", ".toml", ".json", ".properties", ".env", ".cnf", ".xml")
+SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", "site-packages", "dist-packages", ".cache", ".npm",
+             ".cargo", ".rustup", ".pyenv", ".nvm", ".m2", ".gradle", ".Trash", "snap", ".vscode-server", ".vscode",
+             ".cursor-server", "google-chrome", "chromium", "BraveSoftware", "mozilla", ".mozilla", "JetBrains",
+             "Code", "Cursor", "lost+found", ".local/lib", "proc", "sys", "dev", "run", ".docker/buildx", ".bun",
+             ".deno", "go", ".terraform", "dist", "build", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
+# AI coding agents: (agent, pattern relative to a home directory, what it is). "login" is the tool's own credential
+# store: reported only when other users can read it.
+AGENT_STORES = [
+    ("Claude Code", ".claude/projects/**/*.jsonl", "chat"), ("Claude Code", ".claude.json", "config"),
+    ("Claude Code", ".claude/settings*.json", "config"), ("Claude Code", ".claude/.credentials.json", "login"),
+    ("Claude Desktop", ".config/Claude/claude_desktop_config.json", "config"),
+    ("Claude Desktop", "Library/Application Support/Claude/claude_desktop_config.json", "config"),
+    ("Cursor", ".cursor/mcp.json", "config"),
+    ("Codex", ".codex/sessions/**/*.jsonl", "chat"), ("Codex", ".codex/history.jsonl", "chat"),
+    ("Codex", ".codex/config.toml", "config"), ("Codex", ".codex/auth.json", "login"),
+    ("Continue", ".continue/config.json", "config"), ("Continue", ".continue/config.yaml", "config"),
+    ("Continue", ".continue/sessions/*.json", "chat"),
+    ("OpenCode", ".config/opencode/opencode.json*", "config"), ("OpenCode", ".local/share/opencode/auth.json", "login"),
+    ("OpenCode", ".local/share/opencode/storage/**/*.json", "chat"),
+    ("OpenCode", ".local/share/opencode/*.db", "chat"),
+    ("Hermes", ".hermes/**/.env", "config"), ("Hermes", ".hermes/**/config.yaml", "config"),
+    ("Hermes", ".hermes/**/*.json", "chat"), ("Hermes", ".hermes/**/*.jsonl", "chat"),
+    ("Hermes", ".hermes/**/*.db", "chat"),
+    ("Gemini CLI", ".gemini/settings.json", "config"), ("Gemini CLI", ".gemini/oauth_creds.json", "login"),
+    ("Gemini CLI", ".gemini/tmp/**/*.json", "chat"),
+    ("Goose", ".config/goose/config.yaml", "config"), ("Goose", ".local/share/goose/sessions/*.jsonl", "chat"),
+    ("aider", ".aider.conf.yml", "config"),
+]
+AGENT_DIRS = {".claude", ".codex", ".continue", ".hermes", ".gemini", ".cursor"}   # walked by AGENT_STORES only
+SECRET_ROOTS = ["etc", "opt", "srv", "usr/local/etc", "var/lib/casaos/apps"]
+TEXT_CAP, CONFIG_CAP, CHAT_CAP = 4 << 20, 512 << 10, 1 << 30
+
+
+def _entropy(s):
+    import math
+    n = len(s)
+    return -sum(c / n * math.log2(c / n) for c in (s.count(ch) for ch in set(s))) if n else 0.0
+
+
+def _classes(s):
+    return sum((any(c.islower() for c in s), any(c.isupper() for c in s), any(c.isdigit() for c in s),
+                any(not c.isalnum() for c in s)))
+
+
+def _placeholder(v):
+    low = v.lower()
+    return low in NOT_VALUES or any(p in low for p in PLACEHOLDER) or len(set(v)) < 4
+
+
+def secretish(v, strict=False):
+    """Does a keyword's value look like a real secret, not a reference to one?"""
+    if _placeholder(v) or IDENT.match(v) or v.startswith(("/", "./", "~/", "http", "-")) or v.isdigit():
+        return False
+    if "=" in v.rstrip("=") or not (any(c.isdigit() for c in v) or (v.lower() != v and v.upper() != v)):
+        return False                            # KEY=VALUE pairs, and plain lower-case words and phrases
+    if _classes(v) < 2 or _entropy(v) < (3.5 if strict else 2.8):
+        return False
+    return not strict or len(v) >= 12
+
+
+def find_secrets(text, strict=False):
+    """→ [(kind, value)] in one piece of text. Values stay in memory: the caller hashes and drops them."""
+    out = []
+    for kind, rx, before in SHAPES:
+        for m in rx.finditer(text):
+            s = m.start()
+            if before:
+                head = before.search(text, max(0, s - 30), s)
+                if not head:
+                    continue
+                s = head.start()
+            if s and (text[s - 1].isalnum() or text[s - 1] == "_"):
+                continue
+            v = text[s:m.end()]
+            if kind == "OpenAI key" and any(v.startswith(o[1]) or o[1].startswith(v) for o in out):
+                continue
+            out.append((kind, v))
+    shapes, out = out, []
+    for kind, v in shapes:
+        if kind == "password in URL":
+            um = re.search(r"//([^:@/]*):([^:@]*)@[^@]*$", v)
+            if not um:
+                continue
+            user, pw = um.groups()
+            if _placeholder(pw) or pw.lower() in COMMON_PW | {"x-oauth-basic", "pw", "x"} or len(pw) < 4 \
+                    or pw == user:
+                continue                        # a documented default is a weak password, not a leaked one
+        elif kind != "private key" and (_placeholder(v) or _entropy(v) < 3.2):
+            continue
+        out.append((kind, v))
+    for m in KEYWORD_RE.finditer(text):
+        key, pre, op, post, v = m.group(1), m.group(2), m.group(3), m.group(4), m.group(6)
+        if op == "=" and post and not pre:
+            continue                            # `KEY= NEXT=…`: an empty value in an env listing
+        if not SECRET_WORD.search(key.split(".")[-1]) or NOT_SECRET_WORD.search(key.split(".")[-1]):
+            continue
+        if any(v in o[1] or o[1] in v for o in out) or not secretish(v, strict):
+            continue
+        low = key.lower()
+        out.append(("password" if "pass" in low or "pwd" in low else "API key" if "key" in low else
+                    "token" if "token" in low or "bearer" in low else "secret", v))
+    for m in CLI_PW_RE.finditer(text) if any(w in text for w in ("curl", "mysql", "sshpass", "--password")) else ():
+        v = m.group(1)
+        if not any(v in o[1] for o in out) and secretish(v, strict):
+            out.append(("password on a command line", v))
+    return out
+
+
+def private_key_state(text):
+    """PEM / OpenSSH / PuTTY private key text → "encrypted", "unencrypted" or "" (not a private key)."""
+    import base64
+    if "PuTTY-User-Key-File" in text:
+        return "unencrypted" if re.search(r"(?m)^Encryption:\s*none", text) else "encrypted"
+    m = re.search(r"-----BEGIN ((?:[A-Z0-9]+ )?)PRIVATE KEY-----(.*?)-----END", text, re.S)
+    if not m:
+        return ""
+    if "ENCRYPTED" in m.group(1) or "Proc-Type: 4,ENCRYPTED" in m.group(2):
+        return "encrypted"
+    if m.group(1) == "OPENSSH ":
+        try:
+            blob = base64.b64decode("".join(m.group(2).split()))
+        except ValueError:
+            return ""
+        if blob.startswith(b"openssh-key-v1\0") and len(blob) > 19:
+            n = struct.unpack(">I", blob[15:19])[0]
+            return "unencrypted" if blob[19:19 + n] == b"none" else "encrypted"
+    return "unencrypted"
+
+
+def _ids(root):
+    """{uid: name}, {gid: name} from the scanned root's own passwd and group files."""
+    users, groups = {}, {}
+    for rel, d in (("etc/passwd", users), ("etc/group", groups)):
+        for line in _read_text(os.path.join(root, rel)).splitlines():
+            p = line.split(":")
+            if len(p) >= 3 and p[2].isdigit():
+                d[int(p[2])] = p[0]
+    return users, groups
+
+
+class _Reach:
+    """Who besides the owner can read a file: the file's mode AND every directory above it must let them through."""
+
+    def __init__(self, root):
+        self.root, self.stats = os.path.realpath(root), {}
+        self.users, self.groups = _ids(root)
+
+    def _chain(self, d):
+        out = []
+        while True:
+            if d not in self.stats:
+                try:
+                    st = os.stat(d)
+                    self.stats[d] = (st.st_mode, st.st_gid)
+                except OSError:
+                    self.stats[d] = (0, -1)
+            out.append(self.stats[d])
+            up = os.path.dirname(d)
+            if up == d or d == self.root:
+                return out
+            d = up
+
+    def of(self, path, st):
+        chain = self._chain(os.path.dirname(os.path.abspath(path)))
+        if st.st_mode & 0o004 and all(m & 0o001 for m, _ in chain):
+            return "world"
+        grp = self.groups.get(st.st_gid, str(st.st_gid))
+        if st.st_mode & 0o040 and st.st_gid != 0 and grp != self.users.get(st.st_uid) and \
+                all(m & 0o001 or (m & 0o010 and g == st.st_gid) for m, g in chain):
+            return "group:" + grp
+        return "owner"
+
+
+def _fp(salt, values):
+    import hmac
+    import hashlib
+    if not salt:
+        return ""
+    return hmac.new(salt.encode(), "\0".join(sorted(set(values))).encode(), hashlib.sha256).hexdigest()[:8]
+
+
+def _homes(root):
+    out = {os.path.join(root, "root")}
+    for line in _read_text(os.path.join(root, "etc/passwd")).splitlines():
+        p = line.split(":")
+        if len(p) >= 7 and p[2].isdigit() and int(p[2]) >= 1000 and p[5] not in ("", "/") \
+                and not p[6].endswith(("nologin", "false")):
+            out.add(os.path.join(root, p[5].lstrip("/")))
+    for h in glob.glob(os.path.join(root, "home/*")):
+        out.add(h)
+    return sorted(h for h in out if os.path.isdir(h))
+
+
+def _scan_file(path, kind, strict=False):
+    """→ ([(kind, value)], first line or None). Text is read line by line; a database or other binary agent store is
+    read in overlapping chunks (strings sit in SQLite pages as plain bytes)."""
+    hits, first = [], None
+    cap = CHAT_CAP if kind == "chat" else TEXT_CAP
+    try:
+        with open(path, "rb") as f:
+            start = f.read(8192)
+            f.seek(0)
+            if b"\0" in start:
+                if kind != "chat":
+                    return [], None
+                done, tail = 0, b""
+                while done < cap:
+                    chunk = f.read(4 << 20)
+                    if not chunk:
+                        break
+                    done += len(chunk)
+                    found = find_secrets((tail + chunk).decode("latin-1"), strict=True)
+                    hits += found
+                    tail = chunk[-4096:]
+                return hits, None
+            for n, raw in enumerate(f, 1):
+                cap -= len(raw)
+                if cap < 0:
+                    break
+                found = find_secrets(raw.decode("utf-8", "replace"), strict)
+                if found:
+                    hits += found
+                    first = first or n
+    except OSError:
+        return [], None
+    return hits, first
+
+
+def _classify(rel_home, fn):
+    """A file found by the walk → its kind: history, key, agent (aider and project .mcp.json), file, or None."""
+    if fn in HISTORY_NAMES:
+        return "history"
+    if fn == ".aider.chat.history.md":
+        return "agent-chat"
+    if fn == ".mcp.json":
+        return "agent-config"
+    if KEY_NAMES.match(fn) and not fn.endswith(".pub"):
+        return "key"
+    if fn in SECRET_NAMES or (fn == "credentials" and rel_home.endswith(".aws")) or \
+            (fn == "config.json" and rel_home.endswith(".docker")) or (fn == "config" and rel_home.endswith(".kube")):
+        return "file"
+    low = fn.lower()
+    if (low == ".env" or low.startswith(".env.") or low.endswith(".env")) and \
+            not low.endswith((".example", ".sample", ".template", ".dist", ".defaults", ".tmpl")):
+        return "file"
+    if re.match(r"^(?:docker-)?compose[\w.-]*\.ya?ml$", low):
+        return "file"
+    return None
+
+
+def secrets_report(root="/", salt=None, dirs=None, depth=6):
+    """→ {"checked": True, "files": [...], "scanned": n, "note": str}. Each file: {"where", "path", "line", "kinds",
+    "count", "mode", "owner", "reach", "fp"} (+ "agent"). `dirs`: walk only these (sieve secrets DIR ...)."""
+    rep = {"checked": True, "files": [], "scanned": 0, "note": ""}
+    reach = _Reach(root)
+    seen = set()
+    rlen = len(root.rstrip("/"))
+
+    def emit(path, where, hits, line, st, agent=None, extra=None):
+        values = [v for _, v in hits]
+        kinds = sorted({k for k, _ in hits})
+        r = reach.of(path, st)
+        rec = {"where": where, "path": path[rlen:] or "/", "line": line, "kinds": kinds, "count": len(set(values)),
+               "mode": oct(st.st_mode & 0o777)[2:].zfill(4), "owner": reach.users.get(st.st_uid, str(st.st_uid)),
+               "reach": r, "fp": _fp(salt, values)}
+        if agent:
+            rec["agent"] = agent
+        rec.update(extra or {})
+        rep["files"].append(rec)
+
+    def look(path, where, agent=None):
+        try:
+            real = os.path.realpath(path)
+            if real in seen or not real.startswith(os.path.realpath(root).rstrip("/") + "/") and root != "/":
+                return
+            seen.add(real)
+            st = os.stat(path)
+        except OSError:
+            return
+        if not (st.st_mode & 0o100000) or st.st_size == 0:
+            return
+        if where in ("config", "file", "history", "key", "agent-config", "agent-login") and st.st_size > TEXT_CAP:
+            return
+        if where == "cfgscan" and st.st_size > CONFIG_CAP:
+            return
+        rep["scanned"] += 1
+        if where == "key":
+            try:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    text = f.read(65536)
+            except OSError:
+                return
+            state = private_key_state(text)
+            home = any(real.startswith(os.path.realpath(h) + "/") for h in homes)
+            if state == "unencrypted" and (home or reach.of(path, st) == "world"):   # services' own keys are fine
+                emit(path, "key", [("unencrypted private key", text[:200])], None, st)
+            return
+        kind = "chat" if where == "agent-chat" else "text"
+        hits, line = _scan_file(path, kind, strict=where == "agent-chat")
+        if where == "cfgscan":
+            hits = [h for h in hits if h[0] != "JWT"]
+            where = "file"
+        if where == "agent-login":
+            if hits and reach.of(path, st) != "owner":
+                emit(path, "agent-config", hits, line, st, agent, {"login_store": True})
+            return
+        if hits:
+            emit(path, where, hits, line, st, agent)
+
+    def walk(top, maxdepth, cfg, in_home):
+        base = top.count(os.sep)
+        for dp, dns, fns in os.walk(top):
+            rel = dp[rlen:]
+            dns[:] = [d for d in dns if d not in SKIP_DIRS and not (in_home and dp == top and d in AGENT_DIRS)
+                      and os.path.join(rel, d).lstrip("/") not in SKIP_DIRS
+                      and not (rel in ("", "/") and d in ("proc", "sys", "dev", "run"))
+                      and dp.count(os.sep) - base < maxdepth]
+            for fn in fns:
+                kind = _classify(rel, fn)
+                p = os.path.join(dp, fn)
+                if kind:
+                    look(p, kind)
+                elif cfg and fn.lower().endswith(CONFIG_EXT) and not fn.endswith(("-lock.json", ".lock.json")) \
+                        and ".min." not in fn and fn not in ("package.json", "tsconfig.json", "composer.json"):
+                    look(p, "cfgscan")
+
+    homes = _homes(root)
+    if dirs:
+        for d in dirs:
+            if os.path.isdir(d):
+                walk(d, 8, True, False)
+            elif os.path.isfile(d):
+                look(d, _classify(os.path.dirname(d), os.path.basename(d)) or "cfgscan")
+        return rep
+    for h in homes:
+        for agent, pat, what in AGENT_STORES:
+            for p in sorted(glob.glob(os.path.join(h, pat), recursive=True)):
+                look(p, {"chat": "agent-chat", "config": "agent-config", "login": "agent-login"}[what], agent)
+    for h in homes:
+        walk(h, depth, False, True)
+        cfgdir = os.path.join(h, ".config")
+        if os.path.isdir(cfgdir):
+            walk(cfgdir, 4, True, False)
+    for rel in SECRET_ROOTS:
+        d = os.path.join(root, rel)
+        if os.path.isdir(d):
+            walk(d, 5, True, False)
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        rep["note"] = "secrets: not root, so only files this user can read were checked"
+    return rep
+
+
+ENV_SECRET = re.compile(r"(?i)(?:^|_)(?:pass|password|passwd|pwd|passphrase|token|secret|key|apikey|credentials?|"
+                        r"auth|dsn)(?:_|$)")
+ENV_NOT = re.compile(r"(?i)_(?:file|path|dir|url|uri|id|name|names|user|username|host|port|type|enabled|length|ttl|"
+                     r"mode|version)$|(?:^|_)(?:public|pub)(?:_|$)|^gpg_key$")
+
+
+def env_secrets(env, baked=(), salt=None):
+    """A container's Config.Env list → [{"var", "kinds"}], fp. Values the image itself sets are skipped (they ship
+    with the image, so they're public or a problem for the image's author, not this host)."""
+    out, values = [], []
+    baked = set(baked)
+    for item in env or []:
+        name, _, v = item.partition("=")
+        if not v or item in baked:
+            continue
+        hits = find_secrets(item)
+        if not hits and ENV_SECRET.search(name) and not ENV_NOT.search(name) and len(v) >= 4 \
+                and not _placeholder(v) and v.lower() not in ("0", "1", "yes", "no") and not v.isdigit() \
+                and not v.startswith(("/", "http")):
+            hits = [("password" if re.search(r"(?i)pass|pwd", name) else "secret", v)]
+        if hits:
+            out.append({"var": name, "kinds": sorted({k for k, _ in hits})})
+            values += [x for _, x in hits]
+    return out, _fp(salt, values)
+
+
+def containers_env(salt=None):
+    """{image id: [{"container", "vars", "fp"}]} for every running container (docker inspect, no exec)."""
+    out = {}
+    ids = sh("docker", "ps", "-q", "--no-trunc").split()
+    baked = {}
+    for cid in ids:
+        raw = sh("docker", "inspect", "-f", "{{.Image}}|{{.Name}}|{{json .Config.Env}}", cid).strip()
+        img, _, rest = raw.partition("|")
+        name, _, envj = rest.partition("|")
+        try:
+            env = json.loads(envj or "[]")
+        except ValueError:
+            continue
+        if img not in baked:
+            try:
+                baked[img] = json.loads(sh("docker", "image", "inspect", "-f", "{{json .Config.Env}}", img) or "[]") \
+                    or []
+            except ValueError:
+                baked[img] = []
+        found, fp = env_secrets(env, baked[img], salt)
+        if found:
+            out.setdefault(img, []).append({"container": name.lstrip("/"), "vars": found, "fp": fp})
+    return out
+
+
+def host_main(root="/", secrets=True):
     """`python3 - host`: this machine, for `sieve remote`. Reads only; the tar goes to stdout."""
     out = tarfile.open(fileobj=sys.stdout.buffer, mode="w|gz")
 
@@ -674,6 +1141,11 @@ def host_main(root="/"):
         add("accounts", json.dumps(accounts_report(root)).encode())
     except Exception as e:  # noqa: BLE001 — extra information, never a reason to fail the scan
         add("accounts", json.dumps({"checked": False, "note": f"account check failed: {e}"}).encode())
+    if secrets:
+        try:
+            add("secrets", json.dumps(secrets_report(root, SALT)).encode())
+        except Exception as e:  # noqa: BLE001 — extra information, never a reason to fail the scan
+            add("secrets", json.dumps({"checked": False, "note": f"secrets check failed: {e}"}).encode())
     out.close()
 
 
@@ -928,8 +1400,13 @@ def main():
             continue
         images.setdefault(info[1], [info[0], info[2], []])[2].append(cid)
     cpids = container_pids()
+    try:
+        envs = containers_env(SALT)
+    except Exception as e:  # noqa: BLE001 — extra information, never a reason to fail the scan
+        envs = {}
+        errs.append(f"container environment check failed: {type(e).__name__}: {e}")
     n = 0
-    for name, pid, cids in images.values():
+    for iid, (name, pid, cids) in images.items():
         root = f"/proc/{pid}/root"
         if pid in ("", "0") or not os.path.isdir(root + "/"):
             errs.append(f"{name}: container root not readable")
@@ -946,6 +1423,8 @@ def main():
         n += 1
         p = f"{n}/"
         add(p + "IMAGE", name.encode())
+        if iid in envs:
+            add(p + "secrets", json.dumps(envs[iid]).encode())
         for rel in OS_FILES:
             d = head(os.path.join(root, rel), 64 << 20)
             if d is not None:
@@ -973,5 +1452,9 @@ def main():
     out.close()
 
 
+# `sieve remote` and `sieve containers` put a line setting __sieve_salt__ (the scanning machine's own random key) in
+# front of this script, so secrets get the same fingerprint every run; without it they get none.
+SALT = globals().get("__sieve_salt__")
+
 if __name__ == "__main__":
-    host_main() if sys.argv[1:2] == ["host"] else main()
+    host_main(secrets="--no-secrets" not in sys.argv) if sys.argv[1:2] == ["host"] else main()

@@ -80,7 +80,7 @@ def python_packages(root="/"):
     return python_dists(root)
 
 
-def host(root="/", kernel=False):
+def host(root="/", kernel=False, secrets=True, salt=None):
     """The local machine: OS packages from dpkg/apk/rpm, Python packages pip installed outside the OS, and global
     npm packages."""
     files = {}
@@ -106,7 +106,44 @@ def host(root="/", kernel=False):
         except Exception as e:  # noqa: BLE001 — in-use is extra information, never a reason to fail the scan
             t.notes.append(f"in-use check failed: {type(e).__name__}: {e}")
     add_accounts(t, collect.accounts_report(root))
+    if secrets:
+        add_secrets(t, collect.secrets_report(root, salt))
     return t
+
+
+def add_secrets(t, rep):
+    from . import exposure
+    found, note = exposure.secrets(rep, t.name)
+    t.exposures += found
+    if note:
+        t.notes.append(note)
+
+
+def secret_key(cache):
+    """This machine's random fingerprint key (hex), made once next to the cache with mode 0600. Fingerprints let
+    --new and diff recognise the same secret from run to run; without a key (unwritable cache) there are none."""
+    path = os.path.join(os.path.dirname(os.path.abspath(cache)), "secrets.key")
+    try:
+        with open(path, encoding="ascii") as f:
+            k = f.read().strip()
+        if len(k) == 64:
+            return k
+    except OSError:
+        pass
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        k = os.urandom(32).hex()
+        with os.fdopen(fd, "w") as f:
+            f.write(k)
+        return k
+    except OSError:
+        return None
+
+
+def salted(script, salt):
+    """The collector source with the fingerprint key in front of it (it travels on stdin, never on a command line)."""
+    return (f"__sieve_salt__ = {salt!r}\n" if salt else "") + script
 
 
 def add_accounts(t, rep):
@@ -158,7 +195,7 @@ NAMED = {"etc_os-release": "etc/os-release", "usr_lib_os-release": "usr/lib/os-r
          "lib_apk_db_installed": "lib/apk/db/installed"}
 
 
-def image_target(name, files, kernel=False):
+def image_target(name, files, kernel=False, secrets=True):
     """One image's collected files ({relname: bytes}) → Target with its match() input."""
     t = Target(name, "container")
     osf = {k[3:]: v for k, v in files.items() if k.startswith("os/")}
@@ -206,6 +243,12 @@ def image_target(name, files, kernel=False):
                 t.inuse = json.loads(v)
             except ValueError:
                 t.notes.append("in-use data from the collector could not be read")
+        elif k == "secrets" and secrets:
+            from . import exposure
+            try:
+                t.exposures += exposure.container_env(json.loads(v), name)
+            except (ValueError, KeyError):
+                t.notes.append("container environment data from the collector could not be read")
     if unread:
         t.notes.append(f"{unread} Go binaries older than Go 1.18 not read")
     t.os = label if (entries or eco) else "no OS packages"
@@ -215,14 +258,14 @@ def image_target(name, files, kernel=False):
     return t
 
 
-def read_collected(stream, errs, kernel=False):
+def read_collected(stream, errs, kernel=False, secrets=True):
     """Collector tar stream → yields Targets one image at a time (members arrive grouped by image), so only one
     image's files are held at once. Collector errors are appended to `errs`."""
     cur, files = None, {}
 
     def done():
         name = files.pop("IMAGE", b"?").decode("utf-8", "replace")
-        return image_target(name, files, kernel)
+        return image_target(name, files, kernel, secrets)
     with tarfile.open(fileobj=stream, mode="r|gz") as tf:
         for m in tf:
             if not m.isfile():
@@ -243,14 +286,13 @@ def read_collected(stream, errs, kernel=False):
         yield done()
 
 
-def run_collector():
+def run_collector(salt=None, mode=""):
     """Start the collector on this machine → (Popen, stdout stream). Needs root and the docker CLI."""
     if not shutil.which("docker"):
         raise RuntimeError("docker CLI not found: `sieve containers` scans running Docker containers on this machine")
     if hasattr(os, "geteuid") and os.geteuid() != 0:
         raise RuntimeError("`sieve containers` needs root: container roots under /proc/<pid>/root are root-only")
-    p = subprocess.Popen([sys.executable, "-I", COLLECTOR], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return p, p.stdout
+    return run_remote([sys.executable, "-I", "-"] + ([mode] if mode else []), salted(collector_source(), salt))
 
 
 def collector_source():
@@ -262,7 +304,7 @@ def collector_source():
 def read_host(stream, name, kernel=False):
     """`collect.py host`'s tar stream → the remote machine's host Target, in-use report included."""
     files, py, npm, owned, npm_own, rpm_err, inuse, notes = {}, [], [], set(), set(), None, None, []
-    accounts = None
+    accounts = secrets = None
     with tarfile.open(fileobj=stream, mode="r|gz") as tf:
         for m in tf:
             if not m.isfile():
@@ -289,6 +331,11 @@ def read_host(stream, name, kernel=False):
                     accounts = json.loads(data)
                 except ValueError:
                     notes.append("account data from the collector could not be read")
+            elif m.name == "secrets":
+                try:
+                    secrets = json.loads(data)
+                except ValueError:
+                    notes.append("secrets data from the collector could not be read")
             elif m.name == "npm_owned":
                 npm_own = {line for line in data.splitlines() if line}
             elif m.name.startswith(("py/", "npm/")):
@@ -300,6 +347,8 @@ def read_host(stream, name, kernel=False):
     t.notes += notes
     if accounts is not None:                    # an older collector sends none
         add_accounts(t, accounts)
+    if secrets is not None:                     # --no-secrets, or an older collector
+        add_secrets(t, secrets)
     return t
 
 
