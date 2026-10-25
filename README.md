@@ -600,15 +600,17 @@ shows one. The results are in [`bench/RESULTS.md`](bench/RESULTS.md), and how th
 
 ## The warden family
 
-Three tools, one job: knowing what's actually happening on your homelab.
+Five tools, one job: knowing what's actually happening on your homelab.
 
 | Tool | Watches | Runs as |
 |---|---|---|
 | **[warden](https://github.com/casareanderson/warden)** | The whole estate: intrusions, bans, vulnerabilities, patches and AI agents, in one console | A server + web console |
 | **[sieve](https://github.com/casareanderson/sieve)** | Known vulnerabilities in packages, container images and lockfiles (OSV.dev + CISA KEV + EPSS) | A CLI or GitHub Action |
 | **[ephor](https://github.com/casareanderson/ephor)** | What the AI agents on a Linux box connect to, download and can access | A dependency-free CLI that runs down to a Pi Zero |
+| **[proctor](https://github.com/casareanderson/proctor)** | Reviews a git diff and reports what's wrong, fact-checked so it never points at code that isn't in the patch | A CLI: `git diff | proctor diff -` |
+| **[farrier](https://github.com/casareanderson/farrier)** | Applies the patches sieve finds — plan, snapshot, apply, rollback — with your approval | A CLI: `farrier plan root@box` |
 
-sieve and ephor both started inside warden and were pulled out so you can use just what you need.
+The four standalone tools — sieve, ephor, proctor and farrier — all started inside warden and were pulled out so you can use just what you need.
 
 ## Development
 
