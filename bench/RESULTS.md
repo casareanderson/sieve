@@ -1,13 +1,13 @@
 # sieve benchmark results
 
-Generated 2026-10-19 10:53 UTC by [`bench/run.py`](run.py) on GitHub Actions (ubuntu24, 4 CPUs). This file is overwritten by the weekly [bench workflow](../.github/workflows/bench.yml); don't edit it by hand. Raw numbers: [`results.json`](results.json).
+Generated 2026-10-26 11:14 UTC by [`bench/run.py`](run.py) on GitHub Actions (ubuntu24, 4 CPUs). This file is overwritten by the weekly [bench workflow](../.github/workflows/bench.yml); don't edit it by hand. Raw numbers: [`results.json`](results.json).
 
 ## Summary
 
 - **8 images**, deliberately old, pinned by digest ([`images.txt`](images.txt)).
-- **Distinct CVEs per image, summed:** sieve 732, trivy 939, grype 1283, osv-scanner 842. More is not automatically better: tools differ in what they count (see *How to read this*).
+- **Distinct CVEs per image, summed:** sieve 735, trivy 941, grype 1290, osv-scanner 847. More is not automatically better: tools differ in what they count (see *How to read this*).
 - **CISA KEV:** 4 known-exploited (image, CVE) pairs found by at least one tool. Caught: sieve 3, trivy 3, grype 4, osv-scanner 3.
-- **sieve missed** 682 (image, CVE) pairs that at least one other tool reported; 1 of them are in KEV and 54 more are rated CRITICAL by another tool (listed under *Where sieve misses*). sieve reported 0 that no other tool did.
+- **sieve missed** 685 (image, CVE) pairs that at least one other tool reported; 1 of them are in KEV and 52 more are rated CRITICAL by another tool (listed under *Where sieve misses*). sieve reported 0 that no other tool did.
 
 ## How to read this
 
@@ -21,10 +21,10 @@ Generated 2026-10-19 10:53 UTC by [`bench/run.py`](run.py) on GitHub Actions (ub
 
 | tool | version | total scan time | peak memory | notes |
 |---|---|---|---|---|
-| sieve | 0.6.0 | 24s | 107 MB | queries OSV.dev online, cold cache; one run over all images |
-| trivy | 0.74.0 | 2.1s | 342 MB | DB download 6.9s |
-| grype | 0.119.0 | 22s | 333 MB | DB update 78s |
-| osv-scanner | 2.6.0 | 13s | 458 MB | queries OSV.dev online, no local DB |
+| sieve | 0.6.0 | 22s | 104 MB | queries OSV.dev online, cold cache; one run over all images |
+| trivy | 0.74.0 | 1.7s | 334 MB | DB download 6.5s |
+| grype | 0.119.0 | 23s | 360 MB | DB update 81s |
+| osv-scanner | 2.6.0 | 13s | 445 MB | queries OSV.dev online, no local DB |
 
 Peak memory is the largest per-image peak resident set size from `/usr/bin/time -v` (for sieve, the single run including its container collector).
 
@@ -65,7 +65,7 @@ Known-exploited CVEs found by any tool:
 | tool | CVEs | in both (with sieve) | sieve only | this tool only | KEV caught |
 |---|---|---|---|---|---|
 | sieve | 190 | | | | 1/1 |
-| trivy | 196 | 189 | 1 | 7 | 1/1 |
+| trivy | 197 | 189 | 1 | 8 | 1/1 |
 | grype | 188 | 188 | 2 | 0 | 1/1 |
 | osv-scanner | 190 | 190 | 0 | 0 | 1/1 |
 
@@ -83,8 +83,8 @@ Known-exploited CVEs found by any tool:
 |---|---|---|---|---|---|
 | sieve | 74 | | | | 0/0 |
 | trivy | 46 | 46 | 28 | 0 | 0/0 |
-| grype | 183 | 68 | 6 | 115 | 0/0 |
-| osv-scanner | 192 | 74 | 0 | 118 | 0/0 |
+| grype | 184 | 68 | 6 | 116 | 0/0 |
+| osv-scanner | 193 | 74 | 0 | 119 | 0/0 |
 
 ### ubuntu-jammy-20220801
 
@@ -92,10 +92,10 @@ Known-exploited CVEs found by any tool:
 
 | tool | CVEs | in both (with sieve) | sieve only | this tool only | KEV caught |
 |---|---|---|---|---|---|
-| sieve | 290 | | | | 1/1 |
-| trivy | 228 | 228 | 62 | 0 | 1/1 |
-| grype | 257 | 257 | 33 | 0 | 1/1 |
-| osv-scanner | 307 | 290 | 0 | 17 | 1/1 |
+| sieve | 292 | | | | 1/1 |
+| trivy | 228 | 228 | 64 | 0 | 1/1 |
+| grype | 262 | 262 | 30 | 0 | 1/1 |
+| osv-scanner | 310 | 292 | 0 | 18 | 1/1 |
 
 Known-exploited CVEs found by any tool:
 
@@ -120,10 +120,10 @@ Known-exploited CVEs found by any tool:
 
 | tool | CVEs | in both (with sieve) | sieve only | this tool only | KEV caught |
 |---|---|---|---|---|---|
-| sieve | 33 | | | | 0/0 |
-| trivy | 78 | 33 | 0 | 45 | 0/0 |
-| grype | 195 | 33 | 0 | 162 | 0/0 |
-| osv-scanner | 36 | 33 | 0 | 3 | 0/0 |
+| sieve | 34 | | | | 0/0 |
+| trivy | 79 | 34 | 0 | 45 | 0/0 |
+| grype | 196 | 34 | 0 | 162 | 0/0 |
+| osv-scanner | 37 | 34 | 0 | 3 | 0/0 |
 
 ### node-16.20.0-alpine3.17
 
@@ -194,8 +194,6 @@ KEV and CRITICAL CVEs at least one other tool reported and sieve did not. *sieve
 | ubuntu-focal-20220426 | CVE-2026-57432 |  | CRITICAL | perl-base | grype, osv-scanner | yes | yes | unknown: OSV lists this CVE for the installed version, sieve did not report it |
 | ubuntu-focal-20220426 | CVE-2026-57433 |  | CRITICAL | perl-base | grype, osv-scanner | yes | yes | unknown: OSV lists this CVE for the installed version, sieve did not report it |
 | ubuntu-focal-20220426 | CVE-2026-8376 |  | CRITICAL | perl-base | grype, osv-scanner | yes | yes | unknown: OSV lists this CVE for the installed version, sieve did not report it |
-| ubuntu-focal-20220426 | CVE-2026-88647 |  | CRITICAL | libgnutls30 | grype, osv-scanner | yes | yes | unknown: OSV lists this CVE for the installed version, sieve did not report it |
-| ubuntu-focal-20220426 | CVE-2026-95210 |  | CRITICAL | libgnutls30 | grype, osv-scanner | yes | yes | unknown: OSV lists this CVE for the installed version, sieve did not report it |
 | ubuntu-jammy-20220801 | CVE-2026-2673 |  | CRITICAL | libssl3 | osv-scanner | yes | yes | unknown: OSV lists this CVE for the installed version, sieve did not report it |
 | ubuntu-jammy-20220801 | CVE-2026-34181 |  | CRITICAL | libssl3 | osv-scanner | yes | yes | unknown: OSV lists this CVE for the installed version, sieve did not report it |
 | ubuntu-jammy-20220801 | CVE-2026-34183 |  | CRITICAL | libssl3 | osv-scanner | yes | yes | unknown: OSV lists this CVE for the installed version, sieve did not report it |
@@ -206,4 +204,4 @@ KEV and CRITICAL CVEs at least one other tool reported and sieve did not. *sieve
 
 ---
 
-KEV catalog version 2026.10.16 (1748 entries). Reproduce: run the bench workflow, or see the top of `bench/run.py`.
+KEV catalog version 2026.10.23 (1756 entries). Reproduce: run the bench workflow, or see the top of `bench/run.py`.
