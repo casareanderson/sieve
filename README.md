@@ -629,3 +629,7 @@ Vulnerability data comes from [OSV.dev](https://osv.dev) and Alpine's secdb; the
 [CISA KEV](https://www.cisa.gov/known-exploited-vulnerabilities-catalog); exploitation likelihood from
 [EPSS](https://www.first.org/epss/) (FIRST); and the malicious-packages feed from the
 [OpenSSF Malicious Packages](https://github.com/ossf/malicious-packages) project via OSV.
+
+---
+
+More homelab field notes: https://iamtech.cn1-lab.uk
