@@ -1,6 +1,6 @@
 {
  "errors": [],
- "generated": "2026-11-16 13:47 UTC",
+ "generated": "2026-11-23 16:07 UTC",
  "images": [
   {
    "comparison": {
@@ -65,19 +65,19 @@
    "ref": "debian:10.13-slim@sha256:bb3dc79fddbca7e8903248ab916bb775c96ec61014b3d02b4f06043b604726dc",
    "runs": {
     "grype": {
-     "peak_kb": 256536,
+     "peak_kb": 243320,
      "rc": 0,
-     "seconds": 1.4462640700000122
+     "seconds": 2.571160100000043
     },
     "osv-scanner": {
-     "peak_kb": 80700,
+     "peak_kb": 80572,
      "rc": 1,
-     "seconds": 2.098383724999991
+     "seconds": 2.089433100000008
     },
     "trivy": {
-     "peak_kb": 185692,
+     "peak_kb": 186216,
      "rc": 0,
-     "seconds": 0.4288813069999833
+     "seconds": 0.6369418040000028
     }
    },
    "sieve_target": {
@@ -104,9 +104,9 @@
    "comparison": {
     "counts": {
      "grype": 214,
-     "osv-scanner": 61,
-     "sieve": 57,
-     "trivy": 297
+     "osv-scanner": 96,
+     "sieve": 91,
+     "trivy": 320
     },
     "kev": [
      {
@@ -123,7 +123,7 @@
       ]
      }
     ],
-    "missed_by_sieve": 241,
+    "missed_by_sieve": 230,
     "misses": [
      {
       "found_by": [
@@ -181,36 +181,6 @@
        "perl-base"
       ],
       "reason": "OSV does not list this CVE for perl 5.32.1-4+deb11u2 in Debian:11 (OSV coverage, import lag or distro triage)",
-      "severity": "CRITICAL",
-      "sieve_saw_package": true
-     },
-     {
-      "found_by": [
-       "trivy",
-       "grype"
-      ],
-      "id": "CVE-2026-33845",
-      "kev": false,
-      "osv_listed": false,
-      "packages": [
-       "libgnutls30"
-      ],
-      "reason": "OSV does not list this CVE for gnutls28 3.7.1-5+deb11u3 in Debian:11 (OSV coverage, import lag or distro triage)",
-      "severity": "CRITICAL",
-      "sieve_saw_package": true
-     },
-     {
-      "found_by": [
-       "trivy",
-       "grype"
-      ],
-      "id": "CVE-2026-42010",
-      "kev": false,
-      "osv_listed": false,
-      "packages": [
-       "libgnutls30"
-      ],
-      "reason": "OSV does not list this CVE for gnutls28 3.7.1-5+deb11u3 in Debian:11 (OSV coverage, import lag or distro triage)",
       "severity": "CRITICAL",
       "sieve_saw_package": true
      },
@@ -294,38 +264,38 @@
     "sieve_only_all": 0,
     "vs_sieve": {
      "grype": {
-      "overlap": 57,
+      "overlap": 91,
       "sieve_only": 0,
-      "tool_only": 157
+      "tool_only": 123
      },
      "osv-scanner": {
-      "overlap": 57,
+      "overlap": 91,
       "sieve_only": 0,
-      "tool_only": 4
+      "tool_only": 5
      },
      "trivy": {
-      "overlap": 57,
+      "overlap": 91,
       "sieve_only": 0,
-      "tool_only": 240
+      "tool_only": 229
      }
     }
    },
    "ref": "debian:11.6-slim@sha256:9404b05bd09b57c76eccc0c5505b3c88b5feccac808d9b193a4fbac87bb44745",
    "runs": {
     "grype": {
-     "peak_kb": 226732,
+     "peak_kb": 255252,
      "rc": 0,
-     "seconds": 1.7030193040000086
+     "seconds": 3.1270652189999737
     },
     "osv-scanner": {
-     "peak_kb": 79796,
+     "peak_kb": 80064,
      "rc": 1,
-     "seconds": 3.5614617880000026
+     "seconds": 2.484151442000041
     },
     "trivy": {
-     "peak_kb": 225956,
+     "peak_kb": 225960,
      "rc": 0,
-     "seconds": 0.47141203399999654
+     "seconds": 0.7533195340000134
     }
    },
    "sieve_target": {
@@ -351,10 +321,10 @@
   {
    "comparison": {
     "counts": {
-     "grype": 194,
-     "osv-scanner": 197,
-     "sieve": 197,
-     "trivy": 204
+     "grype": 200,
+     "osv-scanner": 208,
+     "sieve": 204,
+     "trivy": 218
     },
     "kev": [
      {
@@ -371,43 +341,43 @@
       ]
      }
     ],
-    "missed_by_sieve": 9,
+    "missed_by_sieve": 17,
     "misses": [],
     "sieve_only_all": 0,
     "vs_sieve": {
      "grype": {
-      "overlap": 194,
-      "sieve_only": 3,
+      "overlap": 200,
+      "sieve_only": 4,
       "tool_only": 0
      },
      "osv-scanner": {
-      "overlap": 197,
+      "overlap": 204,
       "sieve_only": 0,
-      "tool_only": 0
+      "tool_only": 4
      },
      "trivy": {
-      "overlap": 195,
-      "sieve_only": 2,
-      "tool_only": 9
+      "overlap": 201,
+      "sieve_only": 3,
+      "tool_only": 17
      }
     }
    },
    "ref": "debian:12.0-slim@sha256:9bd077d2f77c754f4f7f5ee9e6ded9ff1dff92c6dce877754da21b917c122c77",
    "runs": {
     "grype": {
-     "peak_kb": 225044,
+     "peak_kb": 236664,
      "rc": 0,
-     "seconds": 1.6316323579999903
+     "seconds": 3.010691800000018
     },
     "osv-scanner": {
-     "peak_kb": 101460,
+     "peak_kb": 101000,
      "rc": 1,
-     "seconds": 2.3776407130000052
+     "seconds": 9.55526397799997
     },
     "trivy": {
-     "peak_kb": 211844,
+     "peak_kb": 205260,
      "rc": 0,
-     "seconds": 0.5062666719999811
+     "seconds": 0.6790335329999948
     }
    },
    "sieve_target": {
@@ -433,13 +403,13 @@
   {
    "comparison": {
     "counts": {
-     "grype": 192,
-     "osv-scanner": 204,
-     "sieve": 65,
+     "grype": 200,
+     "osv-scanner": 211,
+     "sieve": 66,
      "trivy": 46
     },
     "kev": [],
-    "missed_by_sieve": 141,
+    "missed_by_sieve": 147,
     "misses": [
      {
       "found_by": [
@@ -797,18 +767,18 @@
     "sieve_only_all": 0,
     "vs_sieve": {
      "grype": {
-      "overlap": 59,
+      "overlap": 60,
       "sieve_only": 6,
-      "tool_only": 133
+      "tool_only": 140
      },
      "osv-scanner": {
-      "overlap": 65,
+      "overlap": 66,
       "sieve_only": 0,
-      "tool_only": 139
+      "tool_only": 145
      },
      "trivy": {
       "overlap": 46,
-      "sieve_only": 19,
+      "sieve_only": 20,
       "tool_only": 0
      }
     }
@@ -816,19 +786,19 @@
    "ref": "ubuntu:focal-20220426@sha256:47f14534bda344d9fe6ffd6effb95eefe579f4be0d508b7445cf77f61a0e5724",
    "runs": {
     "grype": {
-     "peak_kb": 243804,
+     "peak_kb": 243912,
      "rc": 0,
-     "seconds": 1.4600215969999795
+     "seconds": 2.634603093999999
     },
     "osv-scanner": {
-     "peak_kb": 825728,
+     "peak_kb": 882280,
      "rc": 1,
-     "seconds": 5.304277879999972
+     "seconds": 7.692495615000041
     },
     "trivy": {
-     "peak_kb": 183964,
+     "peak_kb": 188360,
      "rc": 0,
-     "seconds": 0.40926869500003704
+     "seconds": 0.638127991000033
     }
    },
    "sieve_target": {
@@ -854,10 +824,10 @@
   {
    "comparison": {
     "counts": {
-     "grype": 279,
-     "osv-scanner": 337,
-     "sieve": 319,
-     "trivy": 235
+     "grype": 301,
+     "osv-scanner": 352,
+     "sieve": 334,
+     "trivy": 239
     },
     "kev": [
      {
@@ -978,18 +948,18 @@
     "sieve_only_all": 0,
     "vs_sieve": {
      "grype": {
-      "overlap": 279,
-      "sieve_only": 40,
+      "overlap": 301,
+      "sieve_only": 33,
       "tool_only": 0
      },
      "osv-scanner": {
-      "overlap": 319,
+      "overlap": 334,
       "sieve_only": 0,
       "tool_only": 18
      },
      "trivy": {
-      "overlap": 235,
-      "sieve_only": 84,
+      "overlap": 239,
+      "sieve_only": 95,
       "tool_only": 0
      }
     }
@@ -997,19 +967,19 @@
    "ref": "ubuntu:jammy-20220801@sha256:34fea4f31bf187bc915536831fd0afc9d214755bf700b5cdb1336c82516d154e",
    "runs": {
     "grype": {
-     "peak_kb": 218988,
+     "peak_kb": 234024,
      "rc": 0,
-     "seconds": 1.5399207120000256
+     "seconds": 2.8517310380000254
     },
     "osv-scanner": {
-     "peak_kb": 963828,
+     "peak_kb": 894320,
      "rc": 1,
-     "seconds": 5.112995345000002
+     "seconds": 7.482452808000005
     },
     "trivy": {
-     "peak_kb": 208556,
+     "peak_kb": 209316,
      "rc": 0,
-     "seconds": 0.44063258800002814
+     "seconds": 0.695308429000022
     }
    },
    "sieve_target": {
@@ -1065,19 +1035,19 @@
    "ref": "alpine:3.18.0@sha256:02bb6f428431fbc2809c5d1b41eab5a68350194fb508869a33cb1af4444c9b11",
    "runs": {
     "grype": {
-     "peak_kb": 237436,
+     "peak_kb": 231192,
      "rc": 0,
-     "seconds": 1.1920984789999807
+     "seconds": 2.559595385000023
     },
     "osv-scanner": {
-     "peak_kb": 79088,
+     "peak_kb": 78720,
      "rc": 1,
-     "seconds": 0.8666721269999584
+     "seconds": 0.9256777449999731
     },
     "trivy": {
-     "peak_kb": 184296,
+     "peak_kb": 189492,
      "rc": 0,
-     "seconds": 0.3172880550000059
+     "seconds": 0.15355083299999706
     }
    },
    "sieve_target": {
@@ -1103,13 +1073,13 @@
   {
    "comparison": {
     "counts": {
-     "grype": 200,
+     "grype": 205,
      "osv-scanner": 37,
      "sieve": 34,
      "trivy": 79
     },
     "kev": [],
-    "missed_by_sieve": 170,
+    "missed_by_sieve": 175,
     "misses": [
      {
       "found_by": [
@@ -1204,7 +1174,7 @@
      "grype": {
       "overlap": 34,
       "sieve_only": 0,
-      "tool_only": 166
+      "tool_only": 171
      },
      "osv-scanner": {
       "overlap": 34,
@@ -1221,19 +1191,19 @@
    "ref": "python:3.9.16-slim-buster@sha256:83c6f59ca894629d710ea03243819b8af63e1b074c5a1bdc96f2b8694163e65f",
    "runs": {
     "grype": {
-     "peak_kb": 291388,
+     "peak_kb": 273492,
      "rc": 0,
-     "seconds": 1.7192073909999976
+     "seconds": 3.210295529000007
     },
     "osv-scanner": {
-     "peak_kb": 100168,
+     "peak_kb": 102440,
      "rc": 1,
-     "seconds": 2.4862264189999905
+     "seconds": 3.5411846559999844
     },
     "trivy": {
-     "peak_kb": 194600,
+     "peak_kb": 195860,
      "rc": 0,
-     "seconds": 0.46651434900002187
+     "seconds": 0.7411920619999819
     }
    },
    "sieve_target": {
@@ -1259,7 +1229,7 @@
   {
    "comparison": {
     "counts": {
-     "grype": 149,
+     "grype": 163,
      "osv-scanner": 30,
      "sieve": 61,
      "trivy": 61
@@ -1284,7 +1254,7 @@
       ]
      }
     ],
-    "missed_by_sieve": 88,
+    "missed_by_sieve": 102,
     "misses": [
      {
       "found_by": [
@@ -1395,7 +1365,7 @@
      "grype": {
       "overlap": 61,
       "sieve_only": 0,
-      "tool_only": 88
+      "tool_only": 102
      },
      "osv-scanner": {
       "overlap": 30,
@@ -1412,19 +1382,19 @@
    "ref": "node:16.20.0-alpine3.17@sha256:01b4c77bab0eec8c12c15ca96d1da583ee61d3bd710432d6fa5d0bf9132ae5e0",
    "runs": {
     "grype": {
-     "peak_kb": 358892,
+     "peak_kb": 373064,
      "rc": 0,
-     "seconds": 2.8813634059999913
+     "seconds": 5.410510729999999
     },
     "osv-scanner": {
-     "peak_kb": 86616,
+     "peak_kb": 86532,
      "rc": 1,
-     "seconds": 2.511979151999981
+     "seconds": 3.262111900999969
     },
     "trivy": {
-     "peak_kb": 379108,
+     "peak_kb": 372796,
      "rc": 0,
-     "seconds": 0.5808744469999851
+     "seconds": 0.8917114379999589
     }
    },
    "sieve_target": {
@@ -1448,45 +1418,45 @@
    }
   }
  ],
- "kev_count": 1781,
- "kev_version": "2026.11.13",
+ "kev_count": 1790,
+ "kev_version": "2026.11.23",
  "runner": "GitHub Actions (ubuntu26, 4 CPUs)",
  "tools": {
   "grype": {
    "command": "grype docker-archive:<image.tar> -o json",
-   "note": "DB update 49s",
-   "peak_kb": 358892,
-   "seconds": 13.573527316999986,
+   "note": "DB update 87s",
+   "peak_kb": 373064,
+   "seconds": 25.375652895000087,
    "version": "0.119.0"
   },
   "osv-scanner": {
    "command": "osv-scanner scan image --archive <image.tar> --format json --all-vulns",
    "note": "queries OSV.dev online, no local DB",
-   "peak_kb": 963828,
-   "seconds": 24.319637148999902,
+   "peak_kb": 894320,
+   "seconds": 37.03277124499999,
    "version": "2.6.0"
   },
   "sieve": {
    "command": "sieve containers --json --limit 0",
    "note": "queries OSV.dev online, cold cache; one run over all images",
-   "peak_kb": 123788,
-   "seconds": 16.575140568999984,
+   "peak_kb": 124948,
+   "seconds": 32.43932666200001,
    "version": "0.6.0"
   },
   "trivy": {
    "command": "trivy image --input <image.tar> --format json --list-all-pkgs --scanners vuln --skip-db-update --quiet",
-   "note": "DB download 4.4s",
-   "peak_kb": 379108,
-   "seconds": 3.621138147000039,
+   "note": "DB download 5.8s",
+   "peak_kb": 372796,
+   "seconds": 5.189185624000004,
    "version": "0.74.0"
   }
  },
  "totals": {
   "found": {
-   "grype": 1331,
-   "osv-scanner": 892,
-   "sieve": 759,
-   "trivy": 981
+   "grype": 1386,
+   "osv-scanner": 960,
+   "sieve": 816,
+   "trivy": 1022
   },
   "images_ok": {
    "grype": 8,
@@ -1501,8 +1471,8 @@
    "sieve": 3,
    "trivy": 3
   },
-  "missed": 745,
-  "missed_critical": 54,
+  "missed": 767,
+  "missed_critical": 52,
   "missed_kev": 2,
   "sieve_only": 0
  }
